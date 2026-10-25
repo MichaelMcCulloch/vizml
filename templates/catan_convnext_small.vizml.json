@@ -1,0 +1,4923 @@
+{
+  "version": 1,
+  "name": "Catan · ConvNeXt Small · untrained",
+  "nodes": [
+    {
+      "id": "observation",
+      "type": "layer",
+      "position": {
+        "x": -260,
+        "y": 0
+      },
+      "data": {
+        "kind": "feature_input",
+        "label": "Viewer-relative observation",
+        "params": {
+          "features": 13708
+        },
+        "description": "The actual model input: 13,708 encoded observation values for the acting seat. Board planes, public context, cargo descriptors and legal-action lookup features are derived from this same observation.",
+        "output_shape": [
+          "B",
+          13708
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "board",
+      "type": "layer",
+      "position": {
+        "x": 0,
+        "y": 320
+      },
+      "data": {
+        "kind": "grid_input",
+        "label": "Board feature planes: 45 × 49 × 1,390",
+        "params": {
+          "width": 49,
+          "height": 45,
+          "channels": 1390
+        },
+        "description": "HexPlanes scatters viewer-relative hex, edge, intersection, ship and mission features onto a fixed rectangular canvas. The 1,390 channels mix categorical indicators, quantities, posterior probabilities and geometry; they are not all one-hot image colors.",
+        "output_shape": [
+          "B",
+          1390,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "feature_groups": {
+          "tiles": 238,
+          "edges": 5,
+          "sites": 130,
+          "ships": 960,
+          "villages": 16,
+          "lairs": 32,
+          "pirate": 3,
+          "geometry": 6
+        },
+        "encoding_trainable": false,
+        "native_grid_contains": {
+          "hexes": 72,
+          "edges": 247,
+          "sites": 176
+        },
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "context",
+      "type": "layer",
+      "position": {
+        "x": 0,
+        "y": 80
+      },
+      "data": {
+        "kind": "feature_input",
+        "label": "Global context: 578 features",
+        "params": {
+          "features": 578
+        },
+        "description": "HexContext gathers seat-relative public counters, mission progress, pieces, hands/posteriors, resource covariance and fixed global features. Each encoder learns its own 578→128 context MLP.",
+        "output_shape": [
+          "B",
+          578
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "legal",
+      "type": "layer",
+      "position": {
+        "x": 3900,
+        "y": -80
+      },
+      "data": {
+        "kind": "feature_input",
+        "label": "Legal action IDs: variable L",
+        "params": {
+          "features": 512
+        },
+        "description": "The second actual model input is a list of L ordered legal action IDs. 512 is the compiled serving padding floor, not the action-space size or a fixed number of choices. Padding uses ID −1. The complete action vocabulary contains 82,819 IDs.",
+        "output_shape": [
+          "B",
+          "L"
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "symbolic_width": "L",
+        "serving_legal_floor": 512,
+        "total_action_vocabulary": 82819,
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_entities",
+      "type": "layer",
+      "position": {
+        "x": 3640,
+        "y": 720
+      },
+      "data": {
+        "kind": "gather",
+        "label": "Entity table: local position + attributes",
+        "params": {
+          "entity_width": 32
+        },
+        "description": "Gather fixed hex, edge and intersection positions; add projected ship attributes; construct village, lair and shoal descriptors plus a null entity. This local path retains explicit entity locations and bypasses global mean/max pooling.",
+        "output_shape": [
+          "B",
+          526,
+          32
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "current_role": "actor",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "value_entities",
+      "type": "layer",
+      "position": {
+        "x": 3640,
+        "y": 1580
+      },
+      "data": {
+        "kind": "gather",
+        "label": "Entity table: local position + attributes",
+        "params": {
+          "entity_width": 32
+        },
+        "description": "Gather fixed hex, edge and intersection positions; add projected ship attributes; construct village, lair and shoal descriptors plus a null entity. This returned table is discarded by the independent value head. Its 5,664 adapter parameters have no gradient path to current PPG losses.",
+        "output_shape": [
+          "B",
+          526,
+          32
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "current_role": "value",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "payload_embedding",
+      "type": "layer",
+      "position": {
+        "x": 5616.0,
+        "y": 435.5
+      },
+      "data": {
+        "kind": "embedding",
+        "label": "Payload embedding: 1,967×32",
+        "params": {
+          "vocabulary_size": 1967,
+          "dimensions": 32
+        },
+        "description": "Learn a 32-dimensional embedding for each canonical action payload. A fixed lookup maps each legal action ID to its payload ID.",
+        "output_shape": [
+          "B",
+          "L",
+          32
+        ],
+        "parameter_count": 62944,
+        "module_paths": [
+          "actor.policy.payloads"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.policy.payloads.weight",
+            "shape": [
+              1967,
+              32
+            ],
+            "elements": 62944
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "family_embedding",
+      "type": "layer",
+      "position": {
+        "x": 5616.0,
+        "y": 611.0
+      },
+      "data": {
+        "kind": "embedding",
+        "label": "Action-family embedding: 49×16",
+        "params": {
+          "vocabulary_size": 49,
+          "dimensions": 16
+        },
+        "description": "Learn a 16-dimensional descriptor for each action family.",
+        "output_shape": [
+          "B",
+          "L",
+          16
+        ],
+        "parameter_count": 784,
+        "module_paths": [
+          "actor.policy.families"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.policy.families.weight",
+            "shape": [
+              49,
+              16
+            ],
+            "elements": 784
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "action_features",
+      "type": "layer",
+      "position": {
+        "x": 6006.0,
+        "y": 32.5
+      },
+      "data": {
+        "kind": "concat",
+        "label": "Per-legal-action features: 264",
+        "params": {
+          "features": 264,
+          "axis": "features"
+        },
+        "description": "For each legal action concatenate: first entity 32, second entity 32, their elementwise product 32, payload embedding 32, action-family embedding 16 and two selected cargo descriptions totaling 120.",
+        "output_shape": [
+          "B",
+          "L",
+          264
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "action_projection1",
+      "type": "layer",
+      "position": {
+        "x": 6201.0,
+        "y": 32.5
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Action MLP: 264→128 + SiLU",
+        "params": {
+          "units": 128,
+          "input_features": 264,
+          "activation": "silu",
+          "bias": true
+        },
+        "description": "Learn how the referenced entities, cargo and action metadata interact. Configured dropout is disabled.",
+        "output_shape": [
+          "B",
+          "L",
+          128
+        ],
+        "parameter_count": 33920,
+        "module_paths": [
+          "actor.policy.action_projection.0"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.policy.action_projection.0.weight",
+            "shape": [
+              128,
+              264
+            ],
+            "elements": 33792
+          },
+          {
+            "name": "actor.policy.action_projection.0.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "action_projection2",
+      "type": "layer",
+      "position": {
+        "x": 6396.0,
+        "y": 32.5
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Action representation: 128→64",
+        "params": {
+          "units": 64,
+          "input_features": 128,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Produce a 64-dimensional representation for each legal action.",
+        "output_shape": [
+          "B",
+          "L",
+          64
+        ],
+        "parameter_count": 8256,
+        "module_paths": [
+          "actor.policy.action_projection.3"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.policy.action_projection.3.weight",
+            "shape": [
+              64,
+              128
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "actor.policy.action_projection.3.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "policy_query",
+      "type": "layer",
+      "position": {
+        "x": 6396.0,
+        "y": 0.0
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Global policy query: 256→64",
+        "params": {
+          "units": 64,
+          "input_features": 256,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Transform the actor global MLP output into a query that scores action representations.",
+        "output_shape": [
+          "B",
+          64
+        ],
+        "parameter_count": 16448,
+        "module_paths": [
+          "actor.policy.query"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.policy.query.weight",
+            "shape": [
+              64,
+              256
+            ],
+            "elements": 16384
+          },
+          {
+            "name": "actor.policy.query.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "family_logits",
+      "type": "layer",
+      "position": {
+        "x": 6396.0,
+        "y": 0.0
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Global family logits: 256→49",
+        "params": {
+          "units": 49,
+          "input_features": 256,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Predict preferences among 49 action families from the actor global representation.",
+        "output_shape": [
+          "B",
+          49
+        ],
+        "parameter_count": 12593,
+        "module_paths": [
+          "actor.policy.family"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.policy.family.weight",
+            "shape": [
+              49,
+              256
+            ],
+            "elements": 12544
+          },
+          {
+            "name": "actor.policy.family.bias",
+            "shape": [
+              49
+            ],
+            "elements": 49
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "action_scores",
+      "type": "layer",
+      "position": {
+        "x": 6591.0,
+        "y": 0.0
+      },
+      "data": {
+        "kind": "dot",
+        "label": "Dot product + legal mask",
+        "params": {
+          "dimensions": 64,
+          "padded_action_logit": "negative infinity"
+        },
+        "description": "For each legal action sum the 64 products between its representation and the global query. Padded IDs receive −∞. This does not allocate an 82,819-wide dense classifier.",
+        "output_shape": [
+          "B",
+          "L"
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "policy",
+      "type": "layer",
+      "position": {
+        "x": 6786.0,
+        "y": 0.0
+      },
+      "data": {
+        "kind": "legal_policy",
+        "label": "Policy distribution over the L legal moves",
+        "params": {
+          "action_families": 49,
+          "action_vocabulary": 82819,
+          "legal_choices": "L",
+          "final_activation": "softmax"
+        },
+        "description": "Subtract the within-family log-sum-exp from each action score, add that family’s global logit, then softmax over the supplied legal actions. Collection samples this move distribution; normal raw evaluation chooses its maximum.",
+        "output_shape": [
+          "B",
+          "L"
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "family_normalization": "Only families represented in the legal list contribute probability.",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_critic_features",
+      "type": "layer",
+      "position": {
+        "x": 6396.0,
+        "y": 474.5
+      },
+      "data": {
+        "kind": "standardize",
+        "label": "Critic features: LayerNorm + saved scaling",
+        "params": {
+          "features": 256,
+          "affine_layernorm": false
+        },
+        "description": "Apply functional LayerNorm to the 256 hidden values, subtract the saved center and divide by the saved scale. These normalization buffers are not trainable. Configured critic dropout 0.5 is disabled in current PPG.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Auxiliary phase: teach outcome features to actor with a post-policy KL anchor. Frozen/not a policy-phase critic-gradient path.",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_public",
+      "type": "layer",
+      "position": {
+        "x": 6396.0,
+        "y": 832.0
+      },
+      "data": {
+        "kind": "feature_input",
+        "label": "Public value context: 18",
+        "params": {
+          "features": 18
+        },
+        "description": "Gather six seat-relative public counters and twelve mission-progress values from the raw observation; standardize with saved public center/scale buffers.",
+        "output_shape": [
+          "B",
+          18
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Auxiliary phase: teach outcome features to actor with a post-policy KL anchor. Frozen/not a policy-phase critic-gradient path.",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_board_score",
+      "type": "layer",
+      "position": {
+        "x": 6591.0,
+        "y": 403.0
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Board value score: 256→1",
+        "params": {
+          "units": 1,
+          "input_features": 256,
+          "activation": "none",
+          "bias": false
+        },
+        "description": "Linear board/context latent contribution to the signed outcome score; no bias.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 256,
+        "module_paths": [
+          "actor.critic.board"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.critic.board.weight",
+            "shape": [
+              1,
+              256
+            ],
+            "elements": 256
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_public_score",
+      "type": "layer",
+      "position": {
+        "x": 6591.0,
+        "y": 572.0
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Public value score: 18→1",
+        "params": {
+          "units": 1,
+          "input_features": 18,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Small regularized linear public contribution, including a bias.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 19,
+        "module_paths": [
+          "actor.critic.public"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.critic.public.weight",
+            "shape": [
+              1,
+              18
+            ],
+            "elements": 18
+          },
+          {
+            "name": "actor.critic.public.bias",
+            "shape": [
+              1
+            ],
+            "elements": 1
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_board_draw",
+      "type": "layer",
+      "position": {
+        "x": 6591.0,
+        "y": 780.0
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Board draw score: 256→1",
+        "params": {
+          "units": 1,
+          "input_features": 256,
+          "activation": "none",
+          "bias": false
+        },
+        "description": "Separate learned contribution controlling terminal-draw probability; no bias.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 256,
+        "module_paths": [
+          "actor.critic.draw_board"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.critic.draw_board.weight",
+            "shape": [
+              1,
+              256
+            ],
+            "elements": 256
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_public_draw",
+      "type": "layer",
+      "position": {
+        "x": 6591.0,
+        "y": 955.5
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Public draw score: 18→1",
+        "params": {
+          "units": 1,
+          "input_features": 18,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Separate learned public contribution controlling draw probability.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 19,
+        "module_paths": [
+          "actor.critic.draw_public"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.critic.draw_public.weight",
+            "shape": [
+              1,
+              18
+            ],
+            "elements": 18
+          },
+          {
+            "name": "actor.critic.draw_public.bias",
+            "shape": [
+              1
+            ],
+            "elements": 1
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_signed_score",
+      "type": "layer",
+      "position": {
+        "x": 6786.0,
+        "y": 474.5
+      },
+      "data": {
+        "kind": "add",
+        "label": "Signed score z = board + public",
+        "params": {},
+        "description": "The signed expected-outcome score before tanh.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_draw_score",
+      "type": "layer",
+      "position": {
+        "x": 6786.0,
+        "y": 832.0
+      },
+      "data": {
+        "kind": "add",
+        "label": "Draw score d = board + public",
+        "params": {},
+        "description": "The draw logit before the outcome-distribution reparameterization.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_outcome_logits",
+      "type": "layer",
+      "position": {
+        "x": 6981.0,
+        "y": 669.5
+      },
+      "data": {
+        "kind": "outcome_transform",
+        "label": "Loss / draw / win logits",
+        "params": {
+          "z_clamp": [
+            -15,
+            15
+          ],
+          "d_clamp": [
+            -15,
+            15
+          ],
+          "tilt": "t = z + asinh(0.5 * exp(d) * sinh(z))",
+          "logits": [
+            "-t",
+            "d",
+            "t"
+          ]
+        },
+        "description": "Reparameterize the signed score and draw score into three terminal-outcome logits. The exact outcome support is −1, 0, +1; the early-win policy bonus is not added to critic labels.",
+        "output_shape": [
+          "B",
+          3
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Auxiliary phase: teach outcome features to actor with a post-policy KL anchor. Frozen/not a policy-phase critic-gradient path.",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_outcomes",
+      "type": "layer",
+      "position": {
+        "x": 7176.0,
+        "y": 669.5
+      },
+      "data": {
+        "kind": "classification",
+        "label": "P(loss), P(draw), P(win)",
+        "params": {
+          "units": 3,
+          "activation": "softmax",
+          "support": [
+            -1,
+            0,
+            1
+          ]
+        },
+        "description": "A categorical terminal-outcome distribution trained with negative log likelihood. This distribution predicts outcomes, not action probabilities.",
+        "output_shape": [
+          "B",
+          3
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Auxiliary phase: teach outcome features to actor with a post-policy KL anchor. Frozen/not a policy-phase critic-gradient path.",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_mean_value",
+      "type": "layer",
+      "position": {
+        "x": 6981.0,
+        "y": 390.0
+      },
+      "data": {
+        "kind": "activation",
+        "label": "Expected signed outcome: tanh(z)",
+        "params": {
+          "activation": "tanh",
+          "units": 1
+        },
+        "description": "The current inference path returns tanh(z). The categorical reparameterization preserves this expected outcome while separately representing draw probability. The actor-side mean is not the collection baseline; this readout is used by the auxiliary outcome-learning phase.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Auxiliary phase: teach outcome features to actor with a post-policy KL anchor. Frozen/not a policy-phase critic-gradient path.",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "value_critic_features",
+      "type": "layer",
+      "position": {
+        "x": 6396.0,
+        "y": 1995.5
+      },
+      "data": {
+        "kind": "standardize",
+        "label": "Critic features: LayerNorm + saved scaling",
+        "params": {
+          "features": 256,
+          "affine_layernorm": false
+        },
+        "description": "Apply functional LayerNorm to the 256 hidden values, subtract the saved center and divide by the saved scale. These normalization buffers are not trainable. Configured critic dropout 0.5 is disabled in current PPG.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Policy phase: independent critic encoder/head learn categorical outcomes without sending value gradients into the actor. Frozen during auxiliary learning.",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "value_public",
+      "type": "layer",
+      "position": {
+        "x": 6396.0,
+        "y": 2353.0
+      },
+      "data": {
+        "kind": "feature_input",
+        "label": "Public value context: 18",
+        "params": {
+          "features": 18
+        },
+        "description": "Gather six seat-relative public counters and twelve mission-progress values from the raw observation; standardize with saved public center/scale buffers.",
+        "output_shape": [
+          "B",
+          18
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Policy phase: independent critic encoder/head learn categorical outcomes without sending value gradients into the actor. Frozen during auxiliary learning.",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "value_board_score",
+      "type": "layer",
+      "position": {
+        "x": 6591.0,
+        "y": 1924.0
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Board value score: 256→1",
+        "params": {
+          "units": 1,
+          "input_features": 256,
+          "activation": "none",
+          "bias": false
+        },
+        "description": "Linear board/context latent contribution to the signed outcome score; no bias.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 256,
+        "module_paths": [
+          "value_head.board"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_head.board.weight",
+            "shape": [
+              1,
+              256
+            ],
+            "elements": 256
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "value_public_score",
+      "type": "layer",
+      "position": {
+        "x": 6591.0,
+        "y": 2093.0
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Public value score: 18→1",
+        "params": {
+          "units": 1,
+          "input_features": 18,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Small regularized linear public contribution, including a bias.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 19,
+        "module_paths": [
+          "value_head.public"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_head.public.weight",
+            "shape": [
+              1,
+              18
+            ],
+            "elements": 18
+          },
+          {
+            "name": "value_head.public.bias",
+            "shape": [
+              1
+            ],
+            "elements": 1
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "value_board_draw",
+      "type": "layer",
+      "position": {
+        "x": 6591.0,
+        "y": 2301.0
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Board draw score: 256→1",
+        "params": {
+          "units": 1,
+          "input_features": 256,
+          "activation": "none",
+          "bias": false
+        },
+        "description": "Separate learned contribution controlling terminal-draw probability; no bias.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 256,
+        "module_paths": [
+          "value_head.draw_board"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_head.draw_board.weight",
+            "shape": [
+              1,
+              256
+            ],
+            "elements": 256
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "value_public_draw",
+      "type": "layer",
+      "position": {
+        "x": 6591.0,
+        "y": 2476.5
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Public draw score: 18→1",
+        "params": {
+          "units": 1,
+          "input_features": 18,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Separate learned public contribution controlling draw probability.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 19,
+        "module_paths": [
+          "value_head.draw_public"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_head.draw_public.weight",
+            "shape": [
+              1,
+              18
+            ],
+            "elements": 18
+          },
+          {
+            "name": "value_head.draw_public.bias",
+            "shape": [
+              1
+            ],
+            "elements": 1
+          }
+        ],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "value_signed_score",
+      "type": "layer",
+      "position": {
+        "x": 6786.0,
+        "y": 1995.5
+      },
+      "data": {
+        "kind": "add",
+        "label": "Signed score z = board + public",
+        "params": {},
+        "description": "The signed expected-outcome score before tanh.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "value_draw_score",
+      "type": "layer",
+      "position": {
+        "x": 6786.0,
+        "y": 2353.0
+      },
+      "data": {
+        "kind": "add",
+        "label": "Draw score d = board + public",
+        "params": {},
+        "description": "The draw logit before the outcome-distribution reparameterization.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "value_outcome_logits",
+      "type": "layer",
+      "position": {
+        "x": 6981.0,
+        "y": 2190.5
+      },
+      "data": {
+        "kind": "outcome_transform",
+        "label": "Loss / draw / win logits",
+        "params": {
+          "z_clamp": [
+            -15,
+            15
+          ],
+          "d_clamp": [
+            -15,
+            15
+          ],
+          "tilt": "t = z + asinh(0.5 * exp(d) * sinh(z))",
+          "logits": [
+            "-t",
+            "d",
+            "t"
+          ]
+        },
+        "description": "Reparameterize the signed score and draw score into three terminal-outcome logits. The exact outcome support is −1, 0, +1; the early-win policy bonus is not added to critic labels.",
+        "output_shape": [
+          "B",
+          3
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Policy phase: independent critic encoder/head learn categorical outcomes without sending value gradients into the actor. Frozen during auxiliary learning.",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "value_outcomes",
+      "type": "layer",
+      "position": {
+        "x": 7176.0,
+        "y": 2190.5
+      },
+      "data": {
+        "kind": "classification",
+        "label": "P(loss), P(draw), P(win)",
+        "params": {
+          "units": 3,
+          "activation": "softmax",
+          "support": [
+            -1,
+            0,
+            1
+          ]
+        },
+        "description": "A categorical terminal-outcome distribution trained with negative log likelihood. This distribution predicts outcomes, not action probabilities.",
+        "output_shape": [
+          "B",
+          3
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Policy phase: independent critic encoder/head learn categorical outcomes without sending value gradients into the actor. Frozen during auxiliary learning.",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "value_mean_value",
+      "type": "layer",
+      "position": {
+        "x": 6981.0,
+        "y": 1911.0
+      },
+      "data": {
+        "kind": "activation",
+        "label": "Expected signed outcome: tanh(z)",
+        "params": {
+          "activation": "tanh",
+          "units": 1
+        },
+        "description": "The current inference path returns tanh(z). The categorical reparameterization preserves this expected outcome while separately representing draw probability. This independent value supplies the on-policy advantage baseline.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Policy phase: independent critic encoder/head learn categorical outcomes without sending value gradients into the actor. Frozen during auxiliary learning.",
+        "provenance": "Retained supplied Catan interface/head architecture; no checkpoint weights."
+      }
+    },
+    {
+      "id": "actor_stem",
+      "type": "layer",
+      "position": {
+        "x": 260,
+        "y": 320
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Board projection · 1,390→32",
+        "params": {
+          "channels": 32,
+          "input_channels": 1390,
+          "kernel": 1,
+          "stride": 1,
+          "padding": 0,
+          "dilation": 1,
+          "activation": "none"
+        },
+        "description": "Project all original board feature planes at every original cell. This fresh 32-channel stem does not reuse the old checkpoint's learned channels or channel-specific refinement offsets.",
+        "output_shape": [
+          "B",
+          32,
+          45,
+          49
+        ],
+        "parameter_count": 44512,
+        "module_paths": [
+          "actor.encoder.stem"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "1,390 → 32",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.stem.weight",
+            "shape": [
+              32,
+              1390,
+              1,
+              1
+            ],
+            "elements": 44480
+          },
+          {
+            "name": "actor.encoder.stem.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_context",
+      "type": "layer",
+      "position": {
+        "x": 260,
+        "y": 80
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Context · 578→128",
+        "params": {
+          "units": 128,
+          "input_features": 578,
+          "activation": "silu"
+        },
+        "description": "The same non-board observation interface, embedded separately by each encoder.",
+        "output_shape": [
+          "B",
+          128
+        ],
+        "parameter_count": 74112,
+        "module_paths": [
+          "actor.encoder.context.0"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Context · 578→128",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.context.0.weight",
+            "shape": [
+              128,
+              578
+            ],
+            "elements": 73984
+          },
+          {
+            "name": "actor.encoder.context.0.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_context_norm",
+      "type": "layer",
+      "position": {
+        "x": 520,
+        "y": 80
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Context norm · 128",
+        "params": {
+          "features": 128,
+          "eps": 1e-05
+        },
+        "description": "Normalize the context embedding per observation.",
+        "output_shape": [
+          "B",
+          128
+        ],
+        "parameter_count": 256,
+        "module_paths": [
+          "actor.encoder.context.2"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Context norm · 128",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.context.2.weight",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          },
+          {
+            "name": "actor.encoder.context.2.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_condition",
+      "type": "layer",
+      "position": {
+        "x": 780,
+        "y": 80
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Context biases · 128→32",
+        "params": {
+          "units": 32,
+          "input_features": 128,
+          "activation": "none"
+        },
+        "description": "Broadcast 32 context-conditioned biases into the spatial stem.",
+        "output_shape": [
+          "B",
+          32
+        ],
+        "parameter_count": 4128,
+        "module_paths": [
+          "actor.encoder.condition"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Context biases · 128→32",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.condition.weight",
+            "shape": [
+              32,
+              128
+            ],
+            "elements": 4096
+          },
+          {
+            "name": "actor.encoder.condition.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_conditioned",
+      "type": "layer",
+      "position": {
+        "x": 1040,
+        "y": 320
+      },
+      "data": {
+        "kind": "add",
+        "label": "Board + known context",
+        "params": {},
+        "description": "Broadcast addition conditions every original board cell on known non-board information.",
+        "output_shape": [
+          "B",
+          32,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "+ known context"
+      }
+    },
+    {
+      "id": "actor_stage1",
+      "type": "layer",
+      "position": {
+        "x": 1300,
+        "y": 320
+      },
+      "data": {
+        "kind": "convnext_stage",
+        "label": "Stage 1 · 32 channels · 1 block",
+        "params": {
+          "blocks": 1,
+          "kernel": 7,
+          "dilation": 1,
+          "padding": 3,
+          "expansion": 2,
+          "layer_scale": 1e-06,
+          "eps": 1e-06,
+          "drop_path": 0
+        },
+        "description": "7×7 depthwise convolution → channel LayerNorm → 2× pointwise expansion → GELU → projection → LayerScale → residual addition. Dilation 1; padding 3. Dropout and stochastic depth are disabled.",
+        "output_shape": [
+          "B",
+          32,
+          45,
+          49
+        ],
+        "parameter_count": 5888,
+        "module_paths": [
+          "actor.encoder.stage1"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "receptive_field": 7,
+        "view_label": "Stage 1 · 32 · 1 block",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.stage1.0.gamma",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          },
+          {
+            "name": "actor.encoder.stage1.0.dwconv.weight",
+            "shape": [
+              32,
+              1,
+              7,
+              7
+            ],
+            "elements": 1568
+          },
+          {
+            "name": "actor.encoder.stage1.0.dwconv.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          },
+          {
+            "name": "actor.encoder.stage1.0.norm.weight",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          },
+          {
+            "name": "actor.encoder.stage1.0.norm.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          },
+          {
+            "name": "actor.encoder.stage1.0.pwconv1.weight",
+            "shape": [
+              64,
+              32
+            ],
+            "elements": 2048
+          },
+          {
+            "name": "actor.encoder.stage1.0.pwconv1.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage1.0.pwconv2.weight",
+            "shape": [
+              32,
+              64
+            ],
+            "elements": 2048
+          },
+          {
+            "name": "actor.encoder.stage1.0.pwconv2.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_down1",
+      "type": "layer",
+      "position": {
+        "x": 1560,
+        "y": 320
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Downsample · 32→48",
+        "params": {
+          "input_channels": 32,
+          "channels": 48,
+          "kernel": 3,
+          "stride": 2,
+          "padding": 1,
+          "dilation": 1,
+          "activation": "none"
+        },
+        "description": "Channel LayerNorm followed by a learned 3×3 stride-2 convolution, with padding 1. Odd grid sizes preserve original coordinate centers and border coverage.",
+        "output_shape": [
+          "B",
+          48,
+          23,
+          25
+        ],
+        "parameter_count": 13936,
+        "module_paths": [
+          "actor.encoder.down1"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 32,
+            "eps": 1e-05
+          }
+        ],
+        "view_label": "↓2 · 32 → 48",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.down1.0.norm.weight",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          },
+          {
+            "name": "actor.encoder.down1.0.norm.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          },
+          {
+            "name": "actor.encoder.down1.1.weight",
+            "shape": [
+              48,
+              32,
+              3,
+              3
+            ],
+            "elements": 13824
+          },
+          {
+            "name": "actor.encoder.down1.1.bias",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_stage2",
+      "type": "layer",
+      "position": {
+        "x": 1820,
+        "y": 320
+      },
+      "data": {
+        "kind": "convnext_stage",
+        "label": "Stage 2 · 48 channels · 1 block",
+        "params": {
+          "blocks": 1,
+          "kernel": 7,
+          "dilation": 1,
+          "padding": 3,
+          "expansion": 2,
+          "layer_scale": 1e-06,
+          "eps": 1e-06,
+          "drop_path": 0
+        },
+        "description": "7×7 depthwise convolution → channel LayerNorm → 2× pointwise expansion → GELU → projection → LayerScale → residual addition. Dilation 1; padding 3. Dropout and stochastic depth are disabled.",
+        "output_shape": [
+          "B",
+          48,
+          23,
+          25
+        ],
+        "parameter_count": 11904,
+        "module_paths": [
+          "actor.encoder.stage2"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "receptive_field": 21,
+        "view_label": "Stage 2 · 48 · 1 block",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.stage2.0.gamma",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          },
+          {
+            "name": "actor.encoder.stage2.0.dwconv.weight",
+            "shape": [
+              48,
+              1,
+              7,
+              7
+            ],
+            "elements": 2352
+          },
+          {
+            "name": "actor.encoder.stage2.0.dwconv.bias",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          },
+          {
+            "name": "actor.encoder.stage2.0.norm.weight",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          },
+          {
+            "name": "actor.encoder.stage2.0.norm.bias",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          },
+          {
+            "name": "actor.encoder.stage2.0.pwconv1.weight",
+            "shape": [
+              96,
+              48
+            ],
+            "elements": 4608
+          },
+          {
+            "name": "actor.encoder.stage2.0.pwconv1.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.stage2.0.pwconv2.weight",
+            "shape": [
+              48,
+              96
+            ],
+            "elements": 4608
+          },
+          {
+            "name": "actor.encoder.stage2.0.pwconv2.bias",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_down2",
+      "type": "layer",
+      "position": {
+        "x": 2080,
+        "y": 320
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Downsample · 48→64",
+        "params": {
+          "input_channels": 48,
+          "channels": 64,
+          "kernel": 3,
+          "stride": 2,
+          "padding": 1,
+          "dilation": 1,
+          "activation": "none"
+        },
+        "description": "Channel LayerNorm followed by a learned 3×3 stride-2 convolution, with padding 1. Odd grid sizes preserve original coordinate centers and border coverage.",
+        "output_shape": [
+          "B",
+          64,
+          12,
+          13
+        ],
+        "parameter_count": 27808,
+        "module_paths": [
+          "actor.encoder.down2"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 48,
+            "eps": 1e-05
+          }
+        ],
+        "view_label": "↓2 · 48 → 64",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.down2.0.norm.weight",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          },
+          {
+            "name": "actor.encoder.down2.0.norm.bias",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          },
+          {
+            "name": "actor.encoder.down2.1.weight",
+            "shape": [
+              64,
+              48,
+              3,
+              3
+            ],
+            "elements": 27648
+          },
+          {
+            "name": "actor.encoder.down2.1.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_stage3",
+      "type": "layer",
+      "position": {
+        "x": 2340,
+        "y": 320
+      },
+      "data": {
+        "kind": "convnext_stage",
+        "label": "Stage 3 · 64 channels · 3 blocks",
+        "params": {
+          "blocks": 3,
+          "kernel": 7,
+          "dilation": 1,
+          "padding": 3,
+          "expansion": 2,
+          "layer_scale": 1e-06,
+          "eps": 1e-06,
+          "drop_path": 0
+        },
+        "description": "7×7 depthwise convolution → channel LayerNorm → 2× pointwise expansion → GELU → projection → LayerScale → residual addition. Dilation 1; padding 3. Dropout and stochastic depth are disabled.",
+        "output_shape": [
+          "B",
+          64,
+          12,
+          13
+        ],
+        "parameter_count": 59904,
+        "module_paths": [
+          "actor.encoder.stage3"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "receptive_field": 97,
+        "view_label": "Stage 3 · 64 · 3 blocks",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.stage3.0.gamma",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.0.dwconv.weight",
+            "shape": [
+              64,
+              1,
+              7,
+              7
+            ],
+            "elements": 3136
+          },
+          {
+            "name": "actor.encoder.stage3.0.dwconv.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.0.norm.weight",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.0.norm.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.0.pwconv1.weight",
+            "shape": [
+              128,
+              64
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "actor.encoder.stage3.0.pwconv1.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          },
+          {
+            "name": "actor.encoder.stage3.0.pwconv2.weight",
+            "shape": [
+              64,
+              128
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "actor.encoder.stage3.0.pwconv2.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.1.gamma",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.1.dwconv.weight",
+            "shape": [
+              64,
+              1,
+              7,
+              7
+            ],
+            "elements": 3136
+          },
+          {
+            "name": "actor.encoder.stage3.1.dwconv.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.1.norm.weight",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.1.norm.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.1.pwconv1.weight",
+            "shape": [
+              128,
+              64
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "actor.encoder.stage3.1.pwconv1.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          },
+          {
+            "name": "actor.encoder.stage3.1.pwconv2.weight",
+            "shape": [
+              64,
+              128
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "actor.encoder.stage3.1.pwconv2.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.2.gamma",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.2.dwconv.weight",
+            "shape": [
+              64,
+              1,
+              7,
+              7
+            ],
+            "elements": 3136
+          },
+          {
+            "name": "actor.encoder.stage3.2.dwconv.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.2.norm.weight",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.2.norm.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.stage3.2.pwconv1.weight",
+            "shape": [
+              128,
+              64
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "actor.encoder.stage3.2.pwconv1.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          },
+          {
+            "name": "actor.encoder.stage3.2.pwconv2.weight",
+            "shape": [
+              64,
+              128
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "actor.encoder.stage3.2.pwconv2.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_final_norm",
+      "type": "layer",
+      "position": {
+        "x": 2600,
+        "y": 320
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Coarse map · channel norm",
+        "params": {
+          "features": 64,
+          "eps": 1e-05
+        },
+        "description": "Normalize the final 64-channel, 12×13 map. Its nominal receptive field is 97×97 original cells.",
+        "output_shape": [
+          "B",
+          64,
+          12,
+          13
+        ],
+        "parameter_count": 128,
+        "module_paths": [
+          "actor.encoder.final.norm"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "receptive_field": 97,
+        "view_label": "Final channel norm",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.final.norm.weight",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "actor.encoder.final.norm.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_mean",
+      "type": "layer",
+      "position": {
+        "x": 2860,
+        "y": 320
+      },
+      "data": {
+        "kind": "globalavgpool2d",
+        "label": "Global mean · 64",
+        "params": {},
+        "description": "Pool all coarse locations, covering the complete input board.",
+        "output_shape": [
+          "B",
+          64
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Global mean · 64"
+      }
+    },
+    {
+      "id": "actor_max",
+      "type": "layer",
+      "position": {
+        "x": 2860,
+        "y": 480
+      },
+      "data": {
+        "kind": "globalmaxpool2d",
+        "label": "Global maximum · 64",
+        "params": {},
+        "description": "Retain strong spatial signals alongside the mean readout.",
+        "output_shape": [
+          "B",
+          64
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Global maximum · 64"
+      }
+    },
+    {
+      "id": "actor_global_join",
+      "type": "layer",
+      "position": {
+        "x": 3120,
+        "y": 320
+      },
+      "data": {
+        "kind": "concat",
+        "label": "Mean + max + context · 256",
+        "params": {
+          "axis": "features",
+          "features": 256
+        },
+        "description": "Concatenate 64 means, 64 maxima and the 128-dimensional context embedding. This replaces the old 320-wide join while preserving the 256-wide hidden output.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Mean + max + context · 256"
+      }
+    },
+    {
+      "id": "actor_state",
+      "type": "layer",
+      "position": {
+        "x": 3380,
+        "y": 320
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Global hidden · 256→256",
+        "params": {
+          "units": 256,
+          "input_features": 256,
+          "activation": "silu"
+        },
+        "description": "Learn the same-width global representation used by the original policy and outcome heads.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 65792,
+        "module_paths": [
+          "actor.encoder.state.0"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Global hidden · 256→256",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.state.0.weight",
+            "shape": [
+              256,
+              256
+            ],
+            "elements": 65536
+          },
+          {
+            "name": "actor.encoder.state.0.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_state_norm",
+      "type": "layer",
+      "position": {
+        "x": 3640,
+        "y": 320
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Global norm · 256",
+        "params": {
+          "features": 256,
+          "eps": 1e-05
+        },
+        "description": "Normalize the global hidden state; no stochastic dropout is applied.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 512,
+        "module_paths": [
+          "actor.encoder.state.2"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Global norm · 256",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.state.2.weight",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          },
+          {
+            "name": "actor.encoder.state.2.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_mlp1",
+      "type": "layer",
+      "position": {
+        "x": 3900,
+        "y": 320
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Global MLP · 256→256",
+        "params": {
+          "units": 256,
+          "input_features": 256,
+          "activation": "silu"
+        },
+        "description": "Retain the first original serial global MLP layer with SiLU. This MLP has no residual bypass.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 65792,
+        "module_paths": [
+          "actor.encoder.global_residual.0"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Global MLP · 256→256",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.global_residual.0.weight",
+            "shape": [
+              256,
+              256
+            ],
+            "elements": 65536
+          },
+          {
+            "name": "actor.encoder.global_residual.0.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_mlp2",
+      "type": "layer",
+      "position": {
+        "x": 4160,
+        "y": 320
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Global output · 256",
+        "params": {
+          "units": 256,
+          "input_features": 256,
+          "activation": "none"
+        },
+        "description": "Retain the final 256-wide interface for policy queries, family logits and PPG-compatible outcome heads.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 65792,
+        "module_paths": [
+          "actor.encoder.global_residual.2"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Global output · 256",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.global_residual.2.weight",
+            "shape": [
+              256,
+              256
+            ],
+            "elements": 65536
+          },
+          {
+            "name": "actor.encoder.global_residual.2.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_upsample",
+      "type": "layer",
+      "position": {
+        "x": 2860,
+        "y": 720
+      },
+      "data": {
+        "kind": "upsample2d",
+        "label": "Coarse → original coordinates",
+        "params": {
+          "height": 45,
+          "width": 49,
+          "mode": "bilinear",
+          "align_corners": 1
+        },
+        "description": "Bilinearly align the 12×13 coarse map with the 45×49 board using align_corners=True. Coarse samples have centers 0,4,…,44 and 0,4,…,48, so this maps them back exactly to the original coordinate system.",
+        "output_shape": [
+          "B",
+          64,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "↑4 · align coordinates"
+      }
+    },
+    {
+      "id": "actor_local_fusion",
+      "type": "layer",
+      "position": {
+        "x": 3120,
+        "y": 720
+      },
+      "data": {
+        "kind": "concat",
+        "label": "Local 32 + coarse 64 → 96",
+        "params": {
+          "axis": "channels",
+          "features": 96
+        },
+        "description": "Concatenate full-resolution stage-1 features and upsampled coarse features along channels. This is a detail-preserving concatenation, not a residual addition.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "32 local + 64 coarse"
+      }
+    },
+    {
+      "id": "actor_entity",
+      "type": "layer",
+      "position": {
+        "x": 3380,
+        "y": 720
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Entity descriptors · 96→32",
+        "params": {
+          "units": 32,
+          "input_features": 96,
+          "activation": "none"
+        },
+        "description": "Project each of the same 2,205 board coordinates to 32 features. The original fixed entity gather and per-legal-action head keep their existing interfaces.",
+        "output_shape": [
+          "B",
+          2205,
+          32
+        ],
+        "parameter_count": 3104,
+        "module_paths": [
+          "actor.encoder.entity"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "effective_use": "Legal-action scoring",
+        "view_label": "32-D entities",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.entity.weight",
+            "shape": [
+              32,
+              96
+            ],
+            "elements": 3072
+          },
+          {
+            "name": "actor.encoder.entity.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_ship",
+      "type": "layer",
+      "position": {
+        "x": 3380,
+        "y": 920
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Ship attributes · 79→32",
+        "params": {
+          "units": 32,
+          "input_features": 79,
+          "activation": "none"
+        },
+        "description": "Keep the same 12×79 ship-attribute input and 32-wide projection before original entity-table assembly.",
+        "output_shape": [
+          "B",
+          12,
+          32
+        ],
+        "parameter_count": 2560,
+        "module_paths": [
+          "actor.encoder.ship"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Ship attributes · 79→32",
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.ship.weight",
+            "shape": [
+              32,
+              79
+            ],
+            "elements": 2528
+          },
+          {
+            "name": "actor.encoder.ship.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_stem",
+      "type": "layer",
+      "position": {
+        "x": 260,
+        "y": 1180
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Board projection · 1,390→32",
+        "params": {
+          "channels": 32,
+          "input_channels": 1390,
+          "kernel": 1,
+          "stride": 1,
+          "padding": 0,
+          "dilation": 1,
+          "activation": "none"
+        },
+        "description": "Project all original board feature planes at every original cell. This fresh 32-channel stem does not reuse the old checkpoint's learned channels or channel-specific refinement offsets.",
+        "output_shape": [
+          "B",
+          32,
+          45,
+          49
+        ],
+        "parameter_count": 44512,
+        "module_paths": [
+          "value_encoder.stem"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "1,390 → 32",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.stem.weight",
+            "shape": [
+              32,
+              1390,
+              1,
+              1
+            ],
+            "elements": 44480
+          },
+          {
+            "name": "value_encoder.stem.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_context",
+      "type": "layer",
+      "position": {
+        "x": 260,
+        "y": 940
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Context · 578→128",
+        "params": {
+          "units": 128,
+          "input_features": 578,
+          "activation": "silu"
+        },
+        "description": "The same non-board observation interface, embedded separately by each encoder.",
+        "output_shape": [
+          "B",
+          128
+        ],
+        "parameter_count": 74112,
+        "module_paths": [
+          "value_encoder.context.0"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Context · 578→128",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.context.0.weight",
+            "shape": [
+              128,
+              578
+            ],
+            "elements": 73984
+          },
+          {
+            "name": "value_encoder.context.0.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_context_norm",
+      "type": "layer",
+      "position": {
+        "x": 520,
+        "y": 940
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Context norm · 128",
+        "params": {
+          "features": 128,
+          "eps": 1e-05
+        },
+        "description": "Normalize the context embedding per observation.",
+        "output_shape": [
+          "B",
+          128
+        ],
+        "parameter_count": 256,
+        "module_paths": [
+          "value_encoder.context.2"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Context norm · 128",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.context.2.weight",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          },
+          {
+            "name": "value_encoder.context.2.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_condition",
+      "type": "layer",
+      "position": {
+        "x": 780,
+        "y": 940
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Context biases · 128→32",
+        "params": {
+          "units": 32,
+          "input_features": 128,
+          "activation": "none"
+        },
+        "description": "Broadcast 32 context-conditioned biases into the spatial stem.",
+        "output_shape": [
+          "B",
+          32
+        ],
+        "parameter_count": 4128,
+        "module_paths": [
+          "value_encoder.condition"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Context biases · 128→32",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.condition.weight",
+            "shape": [
+              32,
+              128
+            ],
+            "elements": 4096
+          },
+          {
+            "name": "value_encoder.condition.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_conditioned",
+      "type": "layer",
+      "position": {
+        "x": 1040,
+        "y": 1180
+      },
+      "data": {
+        "kind": "add",
+        "label": "Board + known context",
+        "params": {},
+        "description": "Broadcast addition conditions every original board cell on known non-board information.",
+        "output_shape": [
+          "B",
+          32,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "+ known context"
+      }
+    },
+    {
+      "id": "value_stage1",
+      "type": "layer",
+      "position": {
+        "x": 1300,
+        "y": 1180
+      },
+      "data": {
+        "kind": "convnext_stage",
+        "label": "Stage 1 · 32 channels · 1 block",
+        "params": {
+          "blocks": 1,
+          "kernel": 7,
+          "dilation": 1,
+          "padding": 3,
+          "expansion": 2,
+          "layer_scale": 1e-06,
+          "eps": 1e-06,
+          "drop_path": 0
+        },
+        "description": "7×7 depthwise convolution → channel LayerNorm → 2× pointwise expansion → GELU → projection → LayerScale → residual addition. Dilation 1; padding 3. Dropout and stochastic depth are disabled.",
+        "output_shape": [
+          "B",
+          32,
+          45,
+          49
+        ],
+        "parameter_count": 5888,
+        "module_paths": [
+          "value_encoder.stage1"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "receptive_field": 7,
+        "view_label": "Stage 1 · 32 · 1 block",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.stage1.0.gamma",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          },
+          {
+            "name": "value_encoder.stage1.0.dwconv.weight",
+            "shape": [
+              32,
+              1,
+              7,
+              7
+            ],
+            "elements": 1568
+          },
+          {
+            "name": "value_encoder.stage1.0.dwconv.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          },
+          {
+            "name": "value_encoder.stage1.0.norm.weight",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          },
+          {
+            "name": "value_encoder.stage1.0.norm.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          },
+          {
+            "name": "value_encoder.stage1.0.pwconv1.weight",
+            "shape": [
+              64,
+              32
+            ],
+            "elements": 2048
+          },
+          {
+            "name": "value_encoder.stage1.0.pwconv1.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage1.0.pwconv2.weight",
+            "shape": [
+              32,
+              64
+            ],
+            "elements": 2048
+          },
+          {
+            "name": "value_encoder.stage1.0.pwconv2.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_down1",
+      "type": "layer",
+      "position": {
+        "x": 1560,
+        "y": 1180
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Downsample · 32→48",
+        "params": {
+          "input_channels": 32,
+          "channels": 48,
+          "kernel": 3,
+          "stride": 2,
+          "padding": 1,
+          "dilation": 1,
+          "activation": "none"
+        },
+        "description": "Channel LayerNorm followed by a learned 3×3 stride-2 convolution, with padding 1. Odd grid sizes preserve original coordinate centers and border coverage.",
+        "output_shape": [
+          "B",
+          48,
+          23,
+          25
+        ],
+        "parameter_count": 13936,
+        "module_paths": [
+          "value_encoder.down1"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 32,
+            "eps": 1e-05
+          }
+        ],
+        "view_label": "↓2 · 32 → 48",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.down1.0.norm.weight",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          },
+          {
+            "name": "value_encoder.down1.0.norm.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          },
+          {
+            "name": "value_encoder.down1.1.weight",
+            "shape": [
+              48,
+              32,
+              3,
+              3
+            ],
+            "elements": 13824
+          },
+          {
+            "name": "value_encoder.down1.1.bias",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_stage2",
+      "type": "layer",
+      "position": {
+        "x": 1820,
+        "y": 1180
+      },
+      "data": {
+        "kind": "convnext_stage",
+        "label": "Stage 2 · 48 channels · 1 block",
+        "params": {
+          "blocks": 1,
+          "kernel": 7,
+          "dilation": 1,
+          "padding": 3,
+          "expansion": 2,
+          "layer_scale": 1e-06,
+          "eps": 1e-06,
+          "drop_path": 0
+        },
+        "description": "7×7 depthwise convolution → channel LayerNorm → 2× pointwise expansion → GELU → projection → LayerScale → residual addition. Dilation 1; padding 3. Dropout and stochastic depth are disabled.",
+        "output_shape": [
+          "B",
+          48,
+          23,
+          25
+        ],
+        "parameter_count": 11904,
+        "module_paths": [
+          "value_encoder.stage2"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "receptive_field": 21,
+        "view_label": "Stage 2 · 48 · 1 block",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.stage2.0.gamma",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          },
+          {
+            "name": "value_encoder.stage2.0.dwconv.weight",
+            "shape": [
+              48,
+              1,
+              7,
+              7
+            ],
+            "elements": 2352
+          },
+          {
+            "name": "value_encoder.stage2.0.dwconv.bias",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          },
+          {
+            "name": "value_encoder.stage2.0.norm.weight",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          },
+          {
+            "name": "value_encoder.stage2.0.norm.bias",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          },
+          {
+            "name": "value_encoder.stage2.0.pwconv1.weight",
+            "shape": [
+              96,
+              48
+            ],
+            "elements": 4608
+          },
+          {
+            "name": "value_encoder.stage2.0.pwconv1.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.stage2.0.pwconv2.weight",
+            "shape": [
+              48,
+              96
+            ],
+            "elements": 4608
+          },
+          {
+            "name": "value_encoder.stage2.0.pwconv2.bias",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_down2",
+      "type": "layer",
+      "position": {
+        "x": 2080,
+        "y": 1180
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Downsample · 48→64",
+        "params": {
+          "input_channels": 48,
+          "channels": 64,
+          "kernel": 3,
+          "stride": 2,
+          "padding": 1,
+          "dilation": 1,
+          "activation": "none"
+        },
+        "description": "Channel LayerNorm followed by a learned 3×3 stride-2 convolution, with padding 1. Odd grid sizes preserve original coordinate centers and border coverage.",
+        "output_shape": [
+          "B",
+          64,
+          12,
+          13
+        ],
+        "parameter_count": 27808,
+        "module_paths": [
+          "value_encoder.down2"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 48,
+            "eps": 1e-05
+          }
+        ],
+        "view_label": "↓2 · 48 → 64",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.down2.0.norm.weight",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          },
+          {
+            "name": "value_encoder.down2.0.norm.bias",
+            "shape": [
+              48
+            ],
+            "elements": 48
+          },
+          {
+            "name": "value_encoder.down2.1.weight",
+            "shape": [
+              64,
+              48,
+              3,
+              3
+            ],
+            "elements": 27648
+          },
+          {
+            "name": "value_encoder.down2.1.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_stage3",
+      "type": "layer",
+      "position": {
+        "x": 2340,
+        "y": 1180
+      },
+      "data": {
+        "kind": "convnext_stage",
+        "label": "Stage 3 · 64 channels · 3 blocks",
+        "params": {
+          "blocks": 3,
+          "kernel": 7,
+          "dilation": 1,
+          "padding": 3,
+          "expansion": 2,
+          "layer_scale": 1e-06,
+          "eps": 1e-06,
+          "drop_path": 0
+        },
+        "description": "7×7 depthwise convolution → channel LayerNorm → 2× pointwise expansion → GELU → projection → LayerScale → residual addition. Dilation 1; padding 3. Dropout and stochastic depth are disabled.",
+        "output_shape": [
+          "B",
+          64,
+          12,
+          13
+        ],
+        "parameter_count": 59904,
+        "module_paths": [
+          "value_encoder.stage3"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "receptive_field": 97,
+        "view_label": "Stage 3 · 64 · 3 blocks",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.stage3.0.gamma",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.0.dwconv.weight",
+            "shape": [
+              64,
+              1,
+              7,
+              7
+            ],
+            "elements": 3136
+          },
+          {
+            "name": "value_encoder.stage3.0.dwconv.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.0.norm.weight",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.0.norm.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.0.pwconv1.weight",
+            "shape": [
+              128,
+              64
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "value_encoder.stage3.0.pwconv1.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          },
+          {
+            "name": "value_encoder.stage3.0.pwconv2.weight",
+            "shape": [
+              64,
+              128
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "value_encoder.stage3.0.pwconv2.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.1.gamma",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.1.dwconv.weight",
+            "shape": [
+              64,
+              1,
+              7,
+              7
+            ],
+            "elements": 3136
+          },
+          {
+            "name": "value_encoder.stage3.1.dwconv.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.1.norm.weight",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.1.norm.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.1.pwconv1.weight",
+            "shape": [
+              128,
+              64
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "value_encoder.stage3.1.pwconv1.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          },
+          {
+            "name": "value_encoder.stage3.1.pwconv2.weight",
+            "shape": [
+              64,
+              128
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "value_encoder.stage3.1.pwconv2.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.2.gamma",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.2.dwconv.weight",
+            "shape": [
+              64,
+              1,
+              7,
+              7
+            ],
+            "elements": 3136
+          },
+          {
+            "name": "value_encoder.stage3.2.dwconv.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.2.norm.weight",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.2.norm.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.stage3.2.pwconv1.weight",
+            "shape": [
+              128,
+              64
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "value_encoder.stage3.2.pwconv1.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          },
+          {
+            "name": "value_encoder.stage3.2.pwconv2.weight",
+            "shape": [
+              64,
+              128
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "value_encoder.stage3.2.pwconv2.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_final_norm",
+      "type": "layer",
+      "position": {
+        "x": 2600,
+        "y": 1180
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Coarse map · channel norm",
+        "params": {
+          "features": 64,
+          "eps": 1e-05
+        },
+        "description": "Normalize the final 64-channel, 12×13 map. Its nominal receptive field is 97×97 original cells.",
+        "output_shape": [
+          "B",
+          64,
+          12,
+          13
+        ],
+        "parameter_count": 128,
+        "module_paths": [
+          "value_encoder.final.norm"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "receptive_field": 97,
+        "view_label": "Final channel norm",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.final.norm.weight",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          },
+          {
+            "name": "value_encoder.final.norm.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_mean",
+      "type": "layer",
+      "position": {
+        "x": 2860,
+        "y": 1180
+      },
+      "data": {
+        "kind": "globalavgpool2d",
+        "label": "Global mean · 64",
+        "params": {},
+        "description": "Pool all coarse locations, covering the complete input board.",
+        "output_shape": [
+          "B",
+          64
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Global mean · 64"
+      }
+    },
+    {
+      "id": "value_max",
+      "type": "layer",
+      "position": {
+        "x": 2860,
+        "y": 1340
+      },
+      "data": {
+        "kind": "globalmaxpool2d",
+        "label": "Global maximum · 64",
+        "params": {},
+        "description": "Retain strong spatial signals alongside the mean readout.",
+        "output_shape": [
+          "B",
+          64
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Global maximum · 64"
+      }
+    },
+    {
+      "id": "value_global_join",
+      "type": "layer",
+      "position": {
+        "x": 3120,
+        "y": 1180
+      },
+      "data": {
+        "kind": "concat",
+        "label": "Mean + max + context · 256",
+        "params": {
+          "axis": "features",
+          "features": 256
+        },
+        "description": "Concatenate 64 means, 64 maxima and the 128-dimensional context embedding. This replaces the old 320-wide join while preserving the 256-wide hidden output.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Mean + max + context · 256"
+      }
+    },
+    {
+      "id": "value_state",
+      "type": "layer",
+      "position": {
+        "x": 3380,
+        "y": 1180
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Global hidden · 256→256",
+        "params": {
+          "units": 256,
+          "input_features": 256,
+          "activation": "silu"
+        },
+        "description": "Learn the same-width global representation used by the original policy and outcome heads.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 65792,
+        "module_paths": [
+          "value_encoder.state.0"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Global hidden · 256→256",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.state.0.weight",
+            "shape": [
+              256,
+              256
+            ],
+            "elements": 65536
+          },
+          {
+            "name": "value_encoder.state.0.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_state_norm",
+      "type": "layer",
+      "position": {
+        "x": 3640,
+        "y": 1180
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Global norm · 256",
+        "params": {
+          "features": 256,
+          "eps": 1e-05
+        },
+        "description": "Normalize the global hidden state; no stochastic dropout is applied.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 512,
+        "module_paths": [
+          "value_encoder.state.2"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Global norm · 256",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.state.2.weight",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          },
+          {
+            "name": "value_encoder.state.2.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_mlp1",
+      "type": "layer",
+      "position": {
+        "x": 3900,
+        "y": 1180
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Global MLP · 256→256",
+        "params": {
+          "units": 256,
+          "input_features": 256,
+          "activation": "silu"
+        },
+        "description": "Retain the first original serial global MLP layer with SiLU. This MLP has no residual bypass.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 65792,
+        "module_paths": [
+          "value_encoder.global_residual.0"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Global MLP · 256→256",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.global_residual.0.weight",
+            "shape": [
+              256,
+              256
+            ],
+            "elements": 65536
+          },
+          {
+            "name": "value_encoder.global_residual.0.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_mlp2",
+      "type": "layer",
+      "position": {
+        "x": 4160,
+        "y": 1180
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Global output · 256",
+        "params": {
+          "units": 256,
+          "input_features": 256,
+          "activation": "none"
+        },
+        "description": "Retain the final 256-wide interface for policy queries, family logits and PPG-compatible outcome heads.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 65792,
+        "module_paths": [
+          "value_encoder.global_residual.2"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Global output · 256",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.global_residual.2.weight",
+            "shape": [
+              256,
+              256
+            ],
+            "elements": 65536
+          },
+          {
+            "name": "value_encoder.global_residual.2.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_upsample",
+      "type": "layer",
+      "position": {
+        "x": 2860,
+        "y": 1580
+      },
+      "data": {
+        "kind": "upsample2d",
+        "label": "Coarse → original coordinates",
+        "params": {
+          "height": 45,
+          "width": 49,
+          "mode": "bilinear",
+          "align_corners": 1
+        },
+        "description": "Bilinearly align the 12×13 coarse map with the 45×49 board using align_corners=True. Coarse samples have centers 0,4,…,44 and 0,4,…,48, so this maps them back exactly to the original coordinate system.",
+        "output_shape": [
+          "B",
+          64,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "↑4 · align coordinates"
+      }
+    },
+    {
+      "id": "value_local_fusion",
+      "type": "layer",
+      "position": {
+        "x": 3120,
+        "y": 1580
+      },
+      "data": {
+        "kind": "concat",
+        "label": "Local 32 + coarse 64 → 96",
+        "params": {
+          "axis": "channels",
+          "features": 96
+        },
+        "description": "Concatenate full-resolution stage-1 features and upsampled coarse features along channels. This is a detail-preserving concatenation, not a residual addition.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "32 local + 64 coarse"
+      }
+    },
+    {
+      "id": "value_entity",
+      "type": "layer",
+      "position": {
+        "x": 3380,
+        "y": 1580
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Entity descriptors · 96→32",
+        "params": {
+          "units": 32,
+          "input_features": 96,
+          "activation": "none"
+        },
+        "description": "Project each of the same 2,205 board coordinates to 32 features. The original fixed entity gather and per-legal-action head keep their existing interfaces.",
+        "output_shape": [
+          "B",
+          2205,
+          32
+        ],
+        "parameter_count": 3104,
+        "module_paths": [
+          "value_encoder.entity"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "effective_use": "Stored, unused adapter retained for original module interface",
+        "view_label": "32-D entities",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.entity.weight",
+            "shape": [
+              32,
+              96
+            ],
+            "elements": 3072
+          },
+          {
+            "name": "value_encoder.entity.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_ship",
+      "type": "layer",
+      "position": {
+        "x": 3380,
+        "y": 1780
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Ship attributes · 79→32",
+        "params": {
+          "units": 32,
+          "input_features": 79,
+          "activation": "none"
+        },
+        "description": "Keep the same 12×79 ship-attribute input and 32-wide projection before original entity-table assembly.",
+        "output_shape": [
+          "B",
+          12,
+          32
+        ],
+        "parameter_count": 2560,
+        "module_paths": [
+          "value_encoder.ship"
+        ],
+        "provenance": "Untrained ConvNeXt proposal encoder; implemented in backend/catan_convnext.py.",
+        "view_label": "Ship attributes · 79→32",
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.ship.weight",
+            "shape": [
+              32,
+              79
+            ],
+            "elements": 2528
+          },
+          {
+            "name": "value_encoder.ship.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "observation-board",
+      "source": "observation",
+      "target": "board",
+      "label": "Fixed board-plane encoding",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-context",
+      "source": "observation",
+      "target": "context",
+      "label": "Fixed context extraction",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-actor_ship",
+      "source": "observation",
+      "target": "actor_ship",
+      "label": "Fixed ship/cargo feature extraction",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_entity-actor_entities",
+      "source": "actor_entity",
+      "target": "actor_entities",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_ship-actor_entities",
+      "source": "actor_ship",
+      "target": "actor_entities",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-actor_entities",
+      "source": "observation",
+      "target": "actor_entities",
+      "label": "Fixed geometry and entity/cargo lookup",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-value_ship",
+      "source": "observation",
+      "target": "value_ship",
+      "label": "Fixed ship/cargo feature extraction",
+      "data": {
+        "role": "unused"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "value_entity-value_entities",
+      "source": "value_entity",
+      "target": "value_entities",
+      "data": {
+        "role": "unused"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "value_ship-value_entities",
+      "source": "value_ship",
+      "target": "value_entities",
+      "data": {
+        "role": "unused"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "observation-value_entities",
+      "source": "observation",
+      "target": "value_entities",
+      "label": "Fixed geometry and entity/cargo lookup",
+      "data": {
+        "role": "unused"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "legal-payload_embedding",
+      "source": "legal",
+      "target": "payload_embedding",
+      "label": "Fixed payload-ID lookup",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "legal-family_embedding",
+      "source": "legal",
+      "target": "family_embedding",
+      "label": "Fixed family-ID lookup",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_entities-action_features",
+      "source": "actor_entities",
+      "target": "action_features",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "payload_embedding-action_features",
+      "source": "payload_embedding",
+      "target": "action_features",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "family_embedding-action_features",
+      "source": "family_embedding",
+      "target": "action_features",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "legal-action_features",
+      "source": "legal",
+      "target": "action_features",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-action_features",
+      "source": "observation",
+      "target": "action_features",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "action_features-action_projection1",
+      "source": "action_features",
+      "target": "action_projection1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "action_projection1-action_projection2",
+      "source": "action_projection1",
+      "target": "action_projection2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_mlp2-policy_query",
+      "source": "actor_mlp2",
+      "target": "policy_query",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_mlp2-family_logits",
+      "source": "actor_mlp2",
+      "target": "family_logits",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "policy_query-action_scores",
+      "source": "policy_query",
+      "target": "action_scores",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "action_projection2-action_scores",
+      "source": "action_projection2",
+      "target": "action_scores",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "legal-action_scores",
+      "source": "legal",
+      "target": "action_scores",
+      "label": "Mask padded IDs",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "action_scores-policy",
+      "source": "action_scores",
+      "target": "policy",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "family_logits-policy",
+      "source": "family_logits",
+      "target": "policy",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "legal-policy",
+      "source": "legal",
+      "target": "policy",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_mlp2-actor_critic_features",
+      "source": "actor_mlp2",
+      "target": "actor_critic_features",
+      "label": "Auxiliary phase: teach outcome features to actor with a post-policy KL anchor. Frozen/not a policy-phase critic-gradient path.",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-actor_public",
+      "source": "observation",
+      "target": "actor_public",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_critic_features-actor_board_score",
+      "source": "actor_critic_features",
+      "target": "actor_board_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_critic_features-actor_board_draw",
+      "source": "actor_critic_features",
+      "target": "actor_board_draw",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_public-actor_public_score",
+      "source": "actor_public",
+      "target": "actor_public_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_public-actor_public_draw",
+      "source": "actor_public",
+      "target": "actor_public_draw",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_board_score-actor_signed_score",
+      "source": "actor_board_score",
+      "target": "actor_signed_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_public_score-actor_signed_score",
+      "source": "actor_public_score",
+      "target": "actor_signed_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_board_draw-actor_draw_score",
+      "source": "actor_board_draw",
+      "target": "actor_draw_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_public_draw-actor_draw_score",
+      "source": "actor_public_draw",
+      "target": "actor_draw_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_signed_score-actor_outcome_logits",
+      "source": "actor_signed_score",
+      "target": "actor_outcome_logits",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_draw_score-actor_outcome_logits",
+      "source": "actor_draw_score",
+      "target": "actor_outcome_logits",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_outcome_logits-actor_outcomes",
+      "source": "actor_outcome_logits",
+      "target": "actor_outcomes",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_signed_score-actor_mean_value",
+      "source": "actor_signed_score",
+      "target": "actor_mean_value",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_mlp2-value_critic_features",
+      "source": "value_mlp2",
+      "target": "value_critic_features",
+      "label": "Policy phase: independent critic encoder/head learn categorical outcomes without sending value gradients into the actor. Frozen during auxiliary learning.",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-value_public",
+      "source": "observation",
+      "target": "value_public",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_critic_features-value_board_score",
+      "source": "value_critic_features",
+      "target": "value_board_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_critic_features-value_board_draw",
+      "source": "value_critic_features",
+      "target": "value_board_draw",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_public-value_public_score",
+      "source": "value_public",
+      "target": "value_public_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_public-value_public_draw",
+      "source": "value_public",
+      "target": "value_public_draw",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_board_score-value_signed_score",
+      "source": "value_board_score",
+      "target": "value_signed_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_public_score-value_signed_score",
+      "source": "value_public_score",
+      "target": "value_signed_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_board_draw-value_draw_score",
+      "source": "value_board_draw",
+      "target": "value_draw_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_public_draw-value_draw_score",
+      "source": "value_public_draw",
+      "target": "value_draw_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_signed_score-value_outcome_logits",
+      "source": "value_signed_score",
+      "target": "value_outcome_logits",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_draw_score-value_outcome_logits",
+      "source": "value_draw_score",
+      "target": "value_outcome_logits",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_outcome_logits-value_outcomes",
+      "source": "value_outcome_logits",
+      "target": "value_outcomes",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_signed_score-value_mean_value",
+      "source": "value_signed_score",
+      "target": "value_mean_value",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_stage1-actor_local_fusion",
+      "source": "actor_stage1",
+      "target": "actor_local_fusion",
+      "label": "High-resolution detail · 32 channels",
+      "data": {
+        "role": "detail_skip"
+      }
+    },
+    {
+      "id": "board-actor_stem",
+      "source": "board",
+      "target": "actor_stem",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "context-actor_context",
+      "source": "context",
+      "target": "actor_context",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_context-actor_context_norm",
+      "source": "actor_context",
+      "target": "actor_context_norm",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_context_norm-actor_condition",
+      "source": "actor_context_norm",
+      "target": "actor_condition",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_stem-actor_conditioned",
+      "source": "actor_stem",
+      "target": "actor_conditioned",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_condition-actor_conditioned",
+      "source": "actor_condition",
+      "target": "actor_conditioned",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_conditioned-actor_stage1",
+      "source": "actor_conditioned",
+      "target": "actor_stage1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_stage1-actor_down1",
+      "source": "actor_stage1",
+      "target": "actor_down1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_down1-actor_stage2",
+      "source": "actor_down1",
+      "target": "actor_stage2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_stage2-actor_down2",
+      "source": "actor_stage2",
+      "target": "actor_down2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_down2-actor_stage3",
+      "source": "actor_down2",
+      "target": "actor_stage3",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_stage3-actor_final_norm",
+      "source": "actor_stage3",
+      "target": "actor_final_norm",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_final_norm-actor_mean",
+      "source": "actor_final_norm",
+      "target": "actor_mean",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_final_norm-actor_max",
+      "source": "actor_final_norm",
+      "target": "actor_max",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_mean-actor_global_join",
+      "source": "actor_mean",
+      "target": "actor_global_join",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_max-actor_global_join",
+      "source": "actor_max",
+      "target": "actor_global_join",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_context_norm-actor_global_join",
+      "source": "actor_context_norm",
+      "target": "actor_global_join",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_global_join-actor_state",
+      "source": "actor_global_join",
+      "target": "actor_state",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_state-actor_state_norm",
+      "source": "actor_state",
+      "target": "actor_state_norm",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_state_norm-actor_mlp1",
+      "source": "actor_state_norm",
+      "target": "actor_mlp1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_mlp1-actor_mlp2",
+      "source": "actor_mlp1",
+      "target": "actor_mlp2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_final_norm-actor_upsample",
+      "source": "actor_final_norm",
+      "target": "actor_upsample",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_upsample-actor_local_fusion",
+      "source": "actor_upsample",
+      "target": "actor_local_fusion",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_local_fusion-actor_entity",
+      "source": "actor_local_fusion",
+      "target": "actor_entity",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_stage1-value_local_fusion",
+      "source": "value_stage1",
+      "target": "value_local_fusion",
+      "label": "High-resolution detail · 32 channels",
+      "data": {
+        "role": "detail_skip"
+      }
+    },
+    {
+      "id": "board-value_stem",
+      "source": "board",
+      "target": "value_stem",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "context-value_context",
+      "source": "context",
+      "target": "value_context",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_context-value_context_norm",
+      "source": "value_context",
+      "target": "value_context_norm",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_context_norm-value_condition",
+      "source": "value_context_norm",
+      "target": "value_condition",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_stem-value_conditioned",
+      "source": "value_stem",
+      "target": "value_conditioned",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_condition-value_conditioned",
+      "source": "value_condition",
+      "target": "value_conditioned",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_conditioned-value_stage1",
+      "source": "value_conditioned",
+      "target": "value_stage1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_stage1-value_down1",
+      "source": "value_stage1",
+      "target": "value_down1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_down1-value_stage2",
+      "source": "value_down1",
+      "target": "value_stage2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_stage2-value_down2",
+      "source": "value_stage2",
+      "target": "value_down2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_down2-value_stage3",
+      "source": "value_down2",
+      "target": "value_stage3",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_stage3-value_final_norm",
+      "source": "value_stage3",
+      "target": "value_final_norm",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_final_norm-value_mean",
+      "source": "value_final_norm",
+      "target": "value_mean",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_final_norm-value_max",
+      "source": "value_final_norm",
+      "target": "value_max",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_mean-value_global_join",
+      "source": "value_mean",
+      "target": "value_global_join",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_max-value_global_join",
+      "source": "value_max",
+      "target": "value_global_join",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_context_norm-value_global_join",
+      "source": "value_context_norm",
+      "target": "value_global_join",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_global_join-value_state",
+      "source": "value_global_join",
+      "target": "value_state",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_state-value_state_norm",
+      "source": "value_state",
+      "target": "value_state_norm",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_state_norm-value_mlp1",
+      "source": "value_state_norm",
+      "target": "value_mlp1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_mlp1-value_mlp2",
+      "source": "value_mlp1",
+      "target": "value_mlp2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_final_norm-value_upsample",
+      "source": "value_final_norm",
+      "target": "value_upsample",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_upsample-value_local_fusion",
+      "source": "value_upsample",
+      "target": "value_local_fusion",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_local_fusion-value_entity",
+      "source": "value_local_fusion",
+      "target": "value_entity",
+      "data": {
+        "role": "data"
+      }
+    }
+  ],
+  "metadata": {
+    "description": "Untrained Catan ConvNeXt Small proposal. Verified encoder implementation; original supplied action/outcome architecture retained as a descriptive integration contract.",
+    "architecture": "hex-convnext-small-ppg-proposal-v1",
+    "algorithm": "Distributional PPG",
+    "input_dimensions": {
+      "raw_observation": 13708,
+      "board": [
+        1390,
+        45,
+        49
+      ],
+      "context": 578,
+      "public_value_context": 18,
+      "legal_actions": "L ordered IDs",
+      "action_vocabulary": 82819,
+      "action_families": 49
+    },
+    "parameter_counts": {
+      "total": 1028301,
+      "actor_encoder": 446128,
+      "independent_value_encoder": 446128,
+      "actor_legal_policy": 134945,
+      "actor_auxiliary_outcome_head": 550,
+      "independent_outcome_head": 550,
+      "stored_unused_value_adapters": 5664
+    },
+    "receptive_field": {
+      "per_final_spatial_location_nominal": [
+        97,
+        97
+      ],
+      "stage_sizes": [
+        [
+          45,
+          49,
+          32
+        ],
+        [
+          23,
+          25,
+          48
+        ],
+        [
+          12,
+          13,
+          64
+        ]
+      ],
+      "dilation": 1,
+      "padding": "3 for 7×7 depthwise; 1 for 3×3 downsampling",
+      "measured_effective_receptive_field": false
+    },
+    "proposal": {
+      "untrained": true,
+      "baseline_parameters": 3680301,
+      "proposed_parameters": 1028301,
+      "parameter_reduction_percent": 72.05932340860164,
+      "baseline_spatial_macs_per_encoder": 3220499520,
+      "spatial_macs_per_encoder": 138616368,
+      "spatial_mac_ratio": 23.23318354438489,
+      "encoder_parameters": 446128,
+      "encoder_source": "/api/templates/catan_convnext_small/encoder.py",
+      "validation_scope": "CNN encoder only. Full original Catan game forward and PPG trainer require application integration."
+    },
+    "important_details": [
+      "The 1,390 board planes, 578 context features, original entity coordinates, 82,819 action IDs, 49 action families and variable legal list L are preserved.",
+      "Separate actor and value encoders each use channels 32→48→64 and 1/1/3 ConvNeXt residual blocks, with 2× channel expansion and no dilation gaps.",
+      "Padding is retained. Two stride-2 transitions produce 45×49→23×25→12×13; the final nominal receptive field is 97×97 original cells.",
+      "The 45×49 stage-1 map bypasses downsampling. Its 32 channels concatenate with 64 upsampled coarse channels before the original 96→32 entity projection.",
+      "The hidden output stays 256-wide, the entity table stays 526×32, and the action head scores only the supplied legal moves.",
+      "Original PPG head structure and phase-specific gradient isolation remain the integration contract: independent critic training, actor auxiliary outcome head, and post-policy KL anchor.",
+      "Every encoder weight is new. No pretrained checkpoint, old channel-specific stem refinement offsets, training statistics or optimizer state is attached.",
+      "The value encoder's unused entity/ship adapters remain stored to preserve the original module interface; their 5,664 parameters are included.",
+      "Spatial MAC counts exclude norms, activations, interpolation, entity projection, and heads. They are arithmetic estimates, not measured speedups."
+    ],
+    "validation": {
+      "encoder_meta_forward": {
+        "stem": [
+          1,
+          32,
+          45,
+          49
+        ],
+        "context": [
+          1,
+          128
+        ],
+        "context_norm": [
+          1,
+          128
+        ],
+        "condition": [
+          1,
+          32
+        ],
+        "conditioned": [
+          1,
+          32,
+          45,
+          49
+        ],
+        "stage1": [
+          1,
+          32,
+          45,
+          49
+        ],
+        "down1": [
+          1,
+          48,
+          23,
+          25
+        ],
+        "stage2": [
+          1,
+          48,
+          23,
+          25
+        ],
+        "down2": [
+          1,
+          64,
+          12,
+          13
+        ],
+        "stage3": [
+          1,
+          64,
+          12,
+          13
+        ],
+        "final_norm": [
+          1,
+          64,
+          12,
+          13
+        ],
+        "mean": [
+          1,
+          64
+        ],
+        "max": [
+          1,
+          64
+        ],
+        "global_join": [
+          1,
+          256
+        ],
+        "state": [
+          1,
+          256
+        ],
+        "state_norm": [
+          1,
+          256
+        ],
+        "mlp1": [
+          1,
+          256
+        ],
+        "mlp2": [
+          1,
+          256
+        ],
+        "upsample": [
+          1,
+          64,
+          45,
+          49
+        ],
+        "local_fusion": [
+          1,
+          96,
+          45,
+          49
+        ],
+        "entity": [
+          1,
+          2205,
+          32
+        ],
+        "ship": [
+          1,
+          12,
+          32
+        ]
+      },
+      "encoder_parameters": 446128,
+      "full_game_forward_verified": false
+    },
+    "format_notes": "This is a descriptive full-model proposal with an executable standalone CNN encoder. Original custom featurization, entity assembly, legal-policy normalization and PPG trainer are preserved as interface specifications; they are not silently replaced by generic builder operations.",
+    "default_scope": "actor_pyramid",
+    "view_scopes": [
+      {
+        "id": "actor_pyramid",
+        "label": "Actor pyramid",
+        "ids": [
+          "board",
+          "actor_stem",
+          "actor_conditioned",
+          "actor_stage1",
+          "actor_down1",
+          "actor_stage2",
+          "actor_down2",
+          "actor_stage3",
+          "actor_final_norm"
+        ]
+      },
+      {
+        "id": "actor_local",
+        "label": "Local + global fusion",
+        "ids": [
+          "actor_stage1",
+          "actor_final_norm",
+          "actor_upsample",
+          "actor_local_fusion",
+          "actor_entity",
+          "actor_ship",
+          "actor_entities"
+        ]
+      },
+      {
+        "id": "actor_cnn",
+        "label": "Actor encoder + context",
+        "ids": [
+          "board",
+          "context",
+          "actor_stem",
+          "actor_context",
+          "actor_context_norm",
+          "actor_condition",
+          "actor_conditioned",
+          "actor_stage1",
+          "actor_down1",
+          "actor_stage2",
+          "actor_down2",
+          "actor_stage3",
+          "actor_final_norm",
+          "actor_mean",
+          "actor_max",
+          "actor_global_join",
+          "actor_state",
+          "actor_state_norm",
+          "actor_mlp1",
+          "actor_mlp2",
+          "actor_upsample",
+          "actor_local_fusion",
+          "actor_entity"
+        ]
+      },
+      {
+        "id": "value_pyramid",
+        "label": "Value pyramid",
+        "ids": [
+          "board",
+          "value_stem",
+          "value_conditioned",
+          "value_stage1",
+          "value_down1",
+          "value_stage2",
+          "value_down2",
+          "value_stage3",
+          "value_final_norm"
+        ]
+      },
+      {
+        "id": "value_cnn",
+        "label": "Value encoder + context",
+        "ids": [
+          "board",
+          "context",
+          "value_stem",
+          "value_context",
+          "value_context_norm",
+          "value_condition",
+          "value_conditioned",
+          "value_stage1",
+          "value_down1",
+          "value_stage2",
+          "value_down2",
+          "value_stage3",
+          "value_final_norm",
+          "value_mean",
+          "value_max",
+          "value_global_join",
+          "value_state",
+          "value_state_norm",
+          "value_mlp1",
+          "value_mlp2",
+          "value_upsample",
+          "value_local_fusion",
+          "value_entity"
+        ]
+      },
+      {
+        "id": "policy",
+        "label": "Legal-action policy",
+        "ids": [
+          "legal",
+          "actor_entities",
+          "payload_embedding",
+          "family_embedding",
+          "action_features",
+          "action_projection1",
+          "action_projection2",
+          "policy_query",
+          "family_logits",
+          "action_scores",
+          "policy",
+          "actor_mlp2"
+        ]
+      },
+      {
+        "id": "outcomes",
+        "label": "PPG outcome heads",
+        "ids": [
+          "actor_critic_features",
+          "actor_public",
+          "actor_board_score",
+          "actor_public_score",
+          "actor_board_draw",
+          "actor_public_draw",
+          "actor_signed_score",
+          "actor_draw_score",
+          "actor_outcome_logits",
+          "actor_outcomes",
+          "actor_mean_value",
+          "value_critic_features",
+          "value_public",
+          "value_board_score",
+          "value_public_score",
+          "value_board_draw",
+          "value_public_draw",
+          "value_signed_score",
+          "value_draw_score",
+          "value_outcome_logits",
+          "value_outcomes",
+          "value_mean_value",
+          "actor_mlp2",
+          "value_mlp2"
+        ]
+      }
+    ]
+  },
+  "template": "catan_convnext_small",
+  "mode": "schematic"
+}

@@ -1,0 +1,254 @@
+{
+  "version": 1,
+  "name": "Transformer · encoder–decoder",
+  "template": "transformer_seq2seq",
+  "nodes": [
+    {
+      "id": "source",
+      "type": "layer",
+      "position": {
+        "x": 0,
+        "y": 80
+      },
+      "data": {
+        "kind": "token_input",
+        "label": "Source tokens",
+        "params": {
+          "tokens": 64
+        }
+      }
+    },
+    {
+      "id": "source_embed",
+      "type": "layer",
+      "position": {
+        "x": 250,
+        "y": 80
+      },
+      "data": {
+        "kind": "token_embedding",
+        "label": "Source embedding",
+        "params": {
+          "vocab": 8192,
+          "features": 256
+        }
+      }
+    },
+    {
+      "id": "source_pos",
+      "type": "layer",
+      "position": {
+        "x": 500,
+        "y": 80
+      },
+      "data": {
+        "kind": "position_encoding",
+        "label": "Source positions",
+        "params": {
+          "method": "sinusoidal"
+        }
+      }
+    },
+    {
+      "id": "encoder",
+      "type": "layer",
+      "position": {
+        "x": 750,
+        "y": 80
+      },
+      "data": {
+        "kind": "transformer_block",
+        "label": "Encoder · 3 blocks",
+        "params": {
+          "blocks": 3,
+          "heads": 8,
+          "mode": "encoder",
+          "expansion": 4,
+          "activation": "gelu",
+          "norm_style": "pre",
+          "eps": 0.00001,
+          "layer_scale": 0,
+          "qkv_bias": 1,
+          "proj_bias": 1,
+          "ffn_bias": 1,
+          "mask_k_bias": 0,
+          "dropout": 0,
+          "position": "none",
+          "rope_base": 10000
+        }
+      }
+    },
+    {
+      "id": "memory",
+      "type": "layer",
+      "position": {
+        "x": 1000,
+        "y": 80
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Encoder memory",
+        "params": {
+          "eps": 0.00001
+        }
+      }
+    },
+    {
+      "id": "target",
+      "type": "layer",
+      "position": {
+        "x": 0,
+        "y": 310
+      },
+      "data": {
+        "kind": "token_input",
+        "label": "Target tokens · shifted right",
+        "params": {
+          "tokens": 32
+        }
+      }
+    },
+    {
+      "id": "target_embed",
+      "type": "layer",
+      "position": {
+        "x": 250,
+        "y": 310
+      },
+      "data": {
+        "kind": "token_embedding",
+        "label": "Target embedding",
+        "params": {
+          "vocab": 8192,
+          "features": 256
+        }
+      }
+    },
+    {
+      "id": "target_pos",
+      "type": "layer",
+      "position": {
+        "x": 500,
+        "y": 310
+      },
+      "data": {
+        "kind": "position_encoding",
+        "label": "Target positions",
+        "params": {
+          "method": "sinusoidal"
+        }
+      }
+    },
+    {
+      "id": "decoder",
+      "type": "layer",
+      "position": {
+        "x": 750,
+        "y": 310
+      },
+      "data": {
+        "kind": "transformer_block",
+        "label": "Decoder · 3 blocks",
+        "params": {
+          "blocks": 3,
+          "heads": 8,
+          "mode": "cross",
+          "expansion": 4,
+          "activation": "gelu",
+          "norm_style": "pre",
+          "eps": 0.00001,
+          "layer_scale": 0,
+          "qkv_bias": 1,
+          "proj_bias": 1,
+          "ffn_bias": 1,
+          "mask_k_bias": 0,
+          "dropout": 0,
+          "position": "none",
+          "rope_base": 10000
+        }
+      }
+    },
+    {
+      "id": "decoder_norm",
+      "type": "layer",
+      "position": {
+        "x": 1000,
+        "y": 310
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Final normalization",
+        "params": {
+          "eps": 0.00001
+        }
+      }
+    },
+    {
+      "id": "tokens",
+      "type": "layer",
+      "position": {
+        "x": 1250,
+        "y": 310
+      },
+      "data": {
+        "kind": "token_head",
+        "label": "Next-token logits",
+        "params": {
+          "vocab": 8192
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "source-source_embed",
+      "source": "source",
+      "target": "source_embed"
+    },
+    {
+      "id": "source_embed-source_pos",
+      "source": "source_embed",
+      "target": "source_pos"
+    },
+    {
+      "id": "source_pos-encoder",
+      "source": "source_pos",
+      "target": "encoder"
+    },
+    {
+      "id": "encoder-memory",
+      "source": "encoder",
+      "target": "memory"
+    },
+    {
+      "id": "target-target_embed",
+      "source": "target",
+      "target": "target_embed"
+    },
+    {
+      "id": "target_embed-target_pos",
+      "source": "target_embed",
+      "target": "target_pos"
+    },
+    {
+      "id": "target_pos-decoder",
+      "source": "target_pos",
+      "target": "decoder"
+    },
+    {
+      "id": "decoder-decoder_norm",
+      "source": "decoder",
+      "target": "decoder_norm"
+    },
+    {
+      "id": "decoder_norm-tokens",
+      "source": "decoder_norm",
+      "target": "tokens"
+    },
+    {
+      "id": "memory-decoder",
+      "source": "memory",
+      "target": "decoder"
+    }
+  ]
+}

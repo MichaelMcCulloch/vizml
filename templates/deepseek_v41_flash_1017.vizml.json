@@ -1,0 +1,328 @@
+{
+  "version": 1,
+  "name": "DeepSeek · V4.1 Flash 1017",
+  "template": "deepseek_v41_flash_1017",
+  "nodes": [
+    {
+      "id": "tokens",
+      "type": "layer",
+      "position": {
+        "x": 0,
+        "y": 80
+      },
+      "data": {
+        "kind": "token_input",
+        "label": "Text + image placeholder IDs",
+        "params": {
+          "tokens": 128
+        }
+      }
+    },
+    {
+      "id": "embed",
+      "type": "layer",
+      "position": {
+        "x": 250,
+        "y": 80
+      },
+      "data": {
+        "kind": "token_embedding",
+        "label": "Shared vocabulary embedding",
+        "params": {
+          "vocab": 129280,
+          "features": 5120
+        }
+      }
+    },
+    {
+      "id": "image",
+      "type": "layer",
+      "position": {
+        "x": 0,
+        "y": 310
+      },
+      "data": {
+        "kind": "grid_input",
+        "label": "Image · reduced preview",
+        "params": {
+          "width": 252,
+          "height": 252,
+          "channels": 3
+        }
+      }
+    },
+    {
+      "id": "vision",
+      "type": "layer",
+      "position": {
+        "x": 250,
+        "y": 310
+      },
+      "data": {
+        "kind": "deepseek_vision",
+        "label": "ViT · 32 blocks + aligner",
+        "params": {}
+      }
+    },
+    {
+      "id": "bridge",
+      "type": "layer",
+      "position": {
+        "x": 500,
+        "y": 80
+      },
+      "data": {
+        "kind": "deepseek_bridge",
+        "label": "Inject image · expand 4 streams",
+        "params": {}
+      }
+    },
+    {
+      "id": "layers_0_1",
+      "type": "layer",
+      "position": {
+        "x": 750,
+        "y": 80
+      },
+      "data": {
+        "kind": "deepseek_stage",
+        "label": "Encoder · layers 0–1",
+        "params": {
+          "start": 0,
+          "blocks": 2
+        }
+      }
+    },
+    {
+      "id": "layers_2_7",
+      "type": "layer",
+      "position": {
+        "x": 1020,
+        "y": 80
+      },
+      "data": {
+        "kind": "deepseek_stage",
+        "label": "Encoder · layers 2–7",
+        "params": {
+          "start": 2,
+          "blocks": 6
+        }
+      }
+    },
+    {
+      "id": "layers_8_13",
+      "type": "layer",
+      "position": {
+        "x": 1290,
+        "y": 80
+      },
+      "data": {
+        "kind": "deepseek_stage",
+        "label": "Encoder · layers 8–13",
+        "params": {
+          "start": 8,
+          "blocks": 6
+        }
+      }
+    },
+    {
+      "id": "layers_14_19",
+      "type": "layer",
+      "position": {
+        "x": 1560,
+        "y": 80
+      },
+      "data": {
+        "kind": "deepseek_stage",
+        "label": "Encoder · layers 14–19",
+        "params": {
+          "start": 14,
+          "blocks": 6
+        }
+      }
+    },
+    {
+      "id": "layers_20_23",
+      "type": "layer",
+      "position": {
+        "x": 1830,
+        "y": 80
+      },
+      "data": {
+        "kind": "deepseek_stage",
+        "label": "Decoder · layers 20–23",
+        "params": {
+          "start": 20,
+          "blocks": 4
+        }
+      }
+    },
+    {
+      "id": "layers_24_27",
+      "type": "layer",
+      "position": {
+        "x": 2100,
+        "y": 80
+      },
+      "data": {
+        "kind": "deepseek_stage",
+        "label": "Decoder · layers 24–27",
+        "params": {
+          "start": 24,
+          "blocks": 4
+        }
+      }
+    },
+    {
+      "id": "layers_28_31",
+      "type": "layer",
+      "position": {
+        "x": 2370,
+        "y": 80
+      },
+      "data": {
+        "kind": "deepseek_stage",
+        "label": "Decoder · layers 28–31",
+        "params": {
+          "start": 28,
+          "blocks": 4
+        }
+      }
+    },
+    {
+      "id": "layers_32_35",
+      "type": "layer",
+      "position": {
+        "x": 2640,
+        "y": 80
+      },
+      "data": {
+        "kind": "deepseek_stage",
+        "label": "Decoder · layers 32–35",
+        "params": {
+          "start": 32,
+          "blocks": 4
+        }
+      }
+    },
+    {
+      "id": "layers_36_39",
+      "type": "layer",
+      "position": {
+        "x": 2910,
+        "y": 80
+      },
+      "data": {
+        "kind": "deepseek_stage",
+        "label": "Decoder · layers 36–39",
+        "params": {
+          "start": 36,
+          "blocks": 4
+        }
+      }
+    },
+    {
+      "id": "logits",
+      "type": "layer",
+      "position": {
+        "x": 3180,
+        "y": 80
+      },
+      "data": {
+        "kind": "deepseek_head",
+        "label": "Main language-model logits",
+        "params": {}
+      }
+    },
+    {
+      "id": "draft",
+      "type": "layer",
+      "position": {
+        "x": 3180,
+        "y": 310
+      },
+      "data": {
+        "kind": "deepseek_draft",
+        "label": "DSpark · 3 stages / 5 tokens",
+        "params": {}
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "tokens-embed",
+      "source": "tokens",
+      "target": "embed"
+    },
+    {
+      "id": "image-vision",
+      "source": "image",
+      "target": "vision"
+    },
+    {
+      "id": "embed-bridge",
+      "source": "embed",
+      "target": "bridge"
+    },
+    {
+      "id": "vision-bridge",
+      "source": "vision",
+      "target": "bridge"
+    },
+    {
+      "id": "bridge-layers_0_1",
+      "source": "bridge",
+      "target": "layers_0_1"
+    },
+    {
+      "id": "layers_0_1-layers_2_7",
+      "source": "layers_0_1",
+      "target": "layers_2_7"
+    },
+    {
+      "id": "layers_2_7-layers_8_13",
+      "source": "layers_2_7",
+      "target": "layers_8_13"
+    },
+    {
+      "id": "layers_8_13-layers_14_19",
+      "source": "layers_8_13",
+      "target": "layers_14_19"
+    },
+    {
+      "id": "layers_14_19-layers_20_23",
+      "source": "layers_14_19",
+      "target": "layers_20_23"
+    },
+    {
+      "id": "layers_20_23-layers_24_27",
+      "source": "layers_20_23",
+      "target": "layers_24_27"
+    },
+    {
+      "id": "layers_24_27-layers_28_31",
+      "source": "layers_24_27",
+      "target": "layers_28_31"
+    },
+    {
+      "id": "layers_28_31-layers_32_35",
+      "source": "layers_28_31",
+      "target": "layers_32_35"
+    },
+    {
+      "id": "layers_32_35-layers_36_39",
+      "source": "layers_32_35",
+      "target": "layers_36_39"
+    },
+    {
+      "id": "layers_36_39-logits",
+      "source": "layers_36_39",
+      "target": "logits"
+    },
+    {
+      "id": "layers_36_39-draft",
+      "source": "layers_36_39",
+      "target": "draft"
+    }
+  ]
+}

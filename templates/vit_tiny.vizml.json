@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "name": "Vision Transformer · Tiny / 16",
+  "template": "vit_tiny",
+  "nodes": [
+    {
+      "id": "image",
+      "type": "layer",
+      "position": {
+        "x": 0,
+        "y": 80
+      },
+      "data": {
+        "kind": "grid_input",
+        "label": "Image · RGB",
+        "params": {
+          "width": 224,
+          "height": 224,
+          "channels": 3
+        }
+      }
+    },
+    {
+      "id": "patches",
+      "type": "layer",
+      "position": {
+        "x": 250,
+        "y": 80
+      },
+      "data": {
+        "kind": "patch_embed",
+        "label": "16×16 patches + CLS",
+        "params": {
+          "patch": 16,
+          "features": 192,
+          "cls_token": 1,
+          "registers": 0,
+          "mask_token": 0
+        }
+      }
+    },
+    {
+      "id": "positions",
+      "type": "layer",
+      "position": {
+        "x": 500,
+        "y": 80
+      },
+      "data": {
+        "kind": "position_encoding",
+        "label": "Learned visual positions",
+        "params": {
+          "method": "learned"
+        }
+      }
+    },
+    {
+      "id": "encoder",
+      "type": "layer",
+      "position": {
+        "x": 750,
+        "y": 80
+      },
+      "data": {
+        "kind": "transformer_block",
+        "label": "ViT encoder · 12 blocks",
+        "params": {
+          "blocks": 12,
+          "heads": 3,
+          "mode": "encoder",
+          "expansion": 4,
+          "activation": "gelu",
+          "norm_style": "pre",
+          "eps": 0.000001,
+          "layer_scale": 0,
+          "qkv_bias": 1,
+          "proj_bias": 1,
+          "ffn_bias": 1,
+          "mask_k_bias": 0,
+          "dropout": 0,
+          "position": "none",
+          "rope_base": 10000
+        }
+      }
+    },
+    {
+      "id": "norm",
+      "type": "layer",
+      "position": {
+        "x": 1000,
+        "y": 80
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Final normalization",
+        "params": {
+          "eps": 0.000001
+        }
+      }
+    },
+    {
+      "id": "cls",
+      "type": "layer",
+      "position": {
+        "x": 1250,
+        "y": 80
+      },
+      "data": {
+        "kind": "token_pool",
+        "label": "Select CLS token",
+        "params": {
+          "method": "cls",
+          "prefix": 1
+        }
+      }
+    },
+    {
+      "id": "classes",
+      "type": "layer",
+      "position": {
+        "x": 1500,
+        "y": 80
+      },
+      "data": {
+        "kind": "classification",
+        "label": "Image classes",
+        "params": {
+          "units": 1000
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "image-patches",
+      "source": "image",
+      "target": "patches"
+    },
+    {
+      "id": "patches-positions",
+      "source": "patches",
+      "target": "positions"
+    },
+    {
+      "id": "positions-encoder",
+      "source": "positions",
+      "target": "encoder"
+    },
+    {
+      "id": "encoder-norm",
+      "source": "encoder",
+      "target": "norm"
+    },
+    {
+      "id": "norm-cls",
+      "source": "norm",
+      "target": "cls"
+    },
+    {
+      "id": "cls-classes",
+      "source": "cls",
+      "target": "classes"
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "name": "Transformer · sequence encoder",
+  "template": "transformer_encoder",
+  "nodes": [
+    {
+      "id": "sequence",
+      "type": "layer",
+      "position": {
+        "x": 0,
+        "y": 80
+      },
+      "data": {
+        "kind": "sequence_input",
+        "label": "Embedded sequence",
+        "params": {
+          "tokens": 64,
+          "features": 256
+        }
+      }
+    },
+    {
+      "id": "positions",
+      "type": "layer",
+      "position": {
+        "x": 250,
+        "y": 80
+      },
+      "data": {
+        "kind": "position_encoding",
+        "label": "Sinusoidal positions",
+        "params": {
+          "method": "sinusoidal"
+        }
+      }
+    },
+    {
+      "id": "encoder",
+      "type": "layer",
+      "position": {
+        "x": 500,
+        "y": 80
+      },
+      "data": {
+        "kind": "transformer_block",
+        "label": "Bidirectional encoder · 6 blocks",
+        "params": {
+          "blocks": 6,
+          "heads": 8,
+          "mode": "encoder",
+          "expansion": 4,
+          "activation": "gelu",
+          "norm_style": "pre",
+          "eps": 0.00001,
+          "layer_scale": 0,
+          "qkv_bias": 1,
+          "proj_bias": 1,
+          "ffn_bias": 1,
+          "mask_k_bias": 0,
+          "dropout": 0,
+          "position": "none",
+          "rope_base": 10000
+        }
+      }
+    },
+    {
+      "id": "norm",
+      "type": "layer",
+      "position": {
+        "x": 750,
+        "y": 80
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Final normalization",
+        "params": {
+          "eps": 0.00001
+        }
+      }
+    },
+    {
+      "id": "pool",
+      "type": "layer",
+      "position": {
+        "x": 1000,
+        "y": 80
+      },
+      "data": {
+        "kind": "token_pool",
+        "label": "Mean token features",
+        "params": {
+          "method": "mean",
+          "prefix": 1
+        }
+      }
+    },
+    {
+      "id": "classes",
+      "type": "layer",
+      "position": {
+        "x": 1250,
+        "y": 80
+      },
+      "data": {
+        "kind": "classification",
+        "label": "Sequence classes",
+        "params": {
+          "units": 10
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "sequence-positions",
+      "source": "sequence",
+      "target": "positions"
+    },
+    {
+      "id": "positions-encoder",
+      "source": "positions",
+      "target": "encoder"
+    },
+    {
+      "id": "encoder-norm",
+      "source": "encoder",
+      "target": "norm"
+    },
+    {
+      "id": "norm-pool",
+      "source": "norm",
+      "target": "pool"
+    },
+    {
+      "id": "pool-classes",
+      "source": "pool",
+      "target": "classes"
+    }
+  ]
+}

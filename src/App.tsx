@@ -1,0 +1,951 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ReactFlow,
+  Background,
+  BackgroundVariant,
+  MiniMap,
+  applyNodeChanges,
+  applyEdgeChanges,
+  useReactFlow,
+  type Connection,
+  type NodeChange,
+  type EdgeChange,
+} from "@xyflow/react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Check,
+  Expand,
+  GitBranch,
+  LayoutGrid,
+  Loader2,
+  Minus,
+  Plus,
+  Redo2,
+  Undo2,
+  X,
+  CircleAlert,
+  CheckCircle2,
+  PanelLeftClose,
+  ArrowUpRight,
+  FileSearch,
+} from "lucide-react";
+import Architecture from "./components/Architecture";
+import ResizablePanels from "./components/ResizablePanels";
+import StatusBar from "./components/StatusBar";
+import TemplateMenu from "./components/TemplateMenu";
+import CheckpointControls from "./components/CheckpointControls";
+import { preferredSnapshotScope, snapshotScopes } from "./snapshotView";
+import Library from "./components/Library";
+import Inspector from "./components/Inspector";
+import LayerNode, { AnalysisContext } from "./components/LayerNode";
+import SkipEdge from "./components/SkipEdge";
+import {
+  autoLayout,
+  canConnect,
+  projectResidualSkips,
+  expandConvNeXtStage,
+  catalog,
+  cleanGraph,
+  examples,
+  makeNode,
+  parseGraph,
+  shapeText,
+  type Kind,
+  type LayerNode as LayerNodeType,
+  type ModelGraph,
+  type Params,
+} from "./model";
+import { download, fileName, useEngine } from "./useEngine";
+
+const nodeTypes = { layer: LayerNode };
+const edgeTypes = { skip: SkipEdge };
+const STORAGE = "vizml.graph.v1";
+function initialGraph() {
+  try {
+    const value = localStorage.getItem(STORAGE);
+    if (value) return parseGraph(value);
+  } catch {
+    /* Recover with the starter graph. */
+  }
+  return examples.multimodal();
+}
+
+export default function App() {
+  const [graph, setGraph] = useState<ModelGraph>(initialGraph);
+  const graphRef = useRef(graph);
+  graphRef.current = graph;
+  const [selected, setSelected] = useState<string | null>(
+    () => graph.nodes.find((n) => n.id === "conv2")?.id ?? null,
+  );
+  const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    error: boolean;
+  } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [exampleMenu, setExampleMenu] = useState(false);
+  const [dialog, setDialog] = useState<"help" | "issues" | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(() => window.innerWidth > 900);
+  const [saved, setSaved] = useState(true);
+  const [, setHistoryVersion] = useState(0);
+  const history = useRef<{
+    past: ModelGraph[];
+    future: ModelGraph[];
+    lastEdit: number;
+  }>({ past: [], future: [], lastEdit: 0 });
+  const flow = useReactFlow<LayerNodeType>();
+  const schematic = graph.mode === "schematic";
+  const [showSnapshotInfo, setShowSnapshotInfo] = useState(false);
+  const [scope, setScope] = useState(() => localStorage.getItem("vizml.snapshot.focus") ?? "all");
+  const scopes = useMemo(() => snapshotScopes(graph), [graph]);
+  const viewGraph = useMemo(() => {
+    if (!schematic || scope === "all") return graph;
+    const ids = new Set(scopes.find(s => s.id === scope)?.ids ?? graph.nodes.map(n => n.id));
+    return { ...graph, nodes: graph.nodes.filter(n => ids.has(n.id)), edges: graph.edges.filter(e => ids.has(e.source) && ids.has(e.target)) };
+  }, [graph, schematic, scope, scopes]);
+  useEffect(() => {
+    localStorage.setItem("vizml.snapshot.focus", scope);
+    if (schematic && !scopes.some(s => s.id === scope)) setScope("all");
+  }, [scope, schematic, scopes]);
+  const graphPane = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const notice = useCallback((message: string, error = false) => {
+    setToast({ message, error });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), error ? 6500 : 4500);
+  }, []);
+  const engine = useEngine(graph, notice);
+  const { analysis } = engine;
+  const snapshot = useCallback(() => {
+    history.current.past.push(cleanGraph(graphRef.current));
+    if (history.current.past.length > 70) history.current.past.shift();
+    history.current.future = [];
+    setHistoryVersion((v) => v + 1);
+  }, []);
+  const commit = useCallback(
+    (next: ModelGraph, remember = true, coalesce = false) => {
+      if (
+        remember &&
+        (!coalesce || Date.now() - history.current.lastEdit > 650)
+      )
+        snapshot();
+      history.current.lastEdit = coalesce ? Date.now() : 0;
+      graphRef.current = next;
+      setGraph(next);
+    },
+    [snapshot],
+  );
+  const fit = useCallback(() => {
+    requestAnimationFrame(() =>
+      flow.fitView({ padding: 0.2, duration: 450, maxZoom: 0.9 }),
+    );
+  }, [flow]);
+  const select = useCallback((id: string | null) => {
+    setShowSnapshotInfo(false);
+    if (id && graphRef.current.mode === "schematic") {
+      const node = graphRef.current.nodes.find(n => n.id === id);
+      if (node) {
+        if (!viewGraph.nodes.some(n => n.id === id)) setScope("all");
+        setTimeout(() => flow.setCenter(node.position.x + 105, node.position.y + 65, { zoom: 0.85, duration: 400 }), 30);
+      }
+    }
+    setSelected(id);
+    setSelectedEdge(null);
+  }, [flow, viewGraph.nodes]);
+
+  useEffect(() => {
+    setSaved(false);
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE, JSON.stringify(cleanGraph(graph)));
+        setSaved(true);
+      } catch {
+        notice(
+          "Browser storage is full. Save a graph file to keep your changes.",
+          true,
+        );
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [graph, notice]);
+  useEffect(() => {
+    if (!exampleMenu) return;
+    const outside = (event: MouseEvent) => {
+      if (!menu.current?.contains(event.target as globalThis.Node))
+        setExampleMenu(false);
+    };
+    document.addEventListener("mousedown", outside);
+    return () => document.removeEventListener("mousedown", outside);
+  }, [exampleMenu]);
+
+  const addNode = (kind: Kind, position?: { x: number; y: number }) => {
+    if (schematic) return;
+    if (graph.nodes.length >= 300) {
+      notice("A graph can contain up to 300 layers.", true);
+      return;
+    }
+    const rect = graphPane.current?.getBoundingClientRect();
+    const point =
+      position ??
+      flow.screenToFlowPosition({
+        x: (rect?.left ?? 230) + (rect?.width ?? 700) * 0.45,
+        y: (rect?.top ?? 400) + (rect?.height ?? 300) * 0.4,
+      });
+    const layer = makeNode(
+      kind,
+      point.x + Math.random() * 30,
+      point.y + Math.random() * 30,
+    );
+    commit({ ...graph, nodes: [...graph.nodes, layer] });
+    select(layer.id);
+    if (expanded) setExpanded(false);
+    if (window.innerWidth <= 900) setShowLibrary(false);
+    notice(
+      kind === "residual"
+        ? "Connect the skip path and a transformed branch. Both tensors must have matching shapes."
+        : `${catalog[kind].title} added. Drag between ports to connect it.`,
+    );
+  };
+  const connect = useCallback(
+    (source: string, target: string) => {
+      const current = graphRef.current;
+      if (!canConnect(current, source, target)) {
+        notice(
+          "That connection creates a cycle, duplicates a dependency, or connects an output to an input.",
+          true,
+        );
+        return;
+      }
+      if (current.edges.length >= 2000) {
+        notice("A graph can contain up to 2,000 connections.", true);
+        return;
+      }
+      commit({
+        ...current,
+        edges: [...current.edges, { id: crypto.randomUUID(), source, target }],
+      });
+    },
+    [commit, notice],
+  );
+  const updateNode = (id: string, label: string, params: Params) =>
+    commit(
+      {
+        ...graph,
+        nodes: graph.nodes.map((n) =>
+          n.id === id ? { ...n, data: { ...n.data, label, params } } : n,
+        ),
+      },
+      true,
+      true,
+    );
+  const deleteNode = useCallback(
+    (id: string) => {
+      const current = graphRef.current;
+      if (current.mode === "schematic") return;
+      commit({
+        ...current,
+        nodes: current.nodes.filter((n) => n.id !== id),
+        edges: current.edges.filter((e) => e.source !== id && e.target !== id),
+      });
+      setSelected(null);
+    },
+    [commit],
+  );
+  const disconnect = useCallback(
+    (id: string) => {
+      const current = graphRef.current;
+      if (current.mode === "schematic") return;
+      commit({ ...current, edges: current.edges.filter((e) => e.id !== id) });
+      setSelectedEdge(null);
+    },
+    [commit],
+  );
+  const duplicate = (id: string) => {
+    if (graph.nodes.length >= 300) {
+      notice("A graph can contain up to 300 layers.", true);
+      return;
+    }
+    const source = graph.nodes.find((n) => n.id === id)!;
+    const copy = makeNode(
+      source.data.kind,
+      source.position.x + 35,
+      source.position.y + 180,
+    );
+    copy.data = {
+      ...source.data,
+      label: `${source.data.label} copy`.slice(0, 100),
+      params: { ...source.data.params },
+    };
+    commit({ ...graph, nodes: [...graph.nodes, copy] });
+    select(copy.id);
+  };
+  const projectResidual = (id: string) => {
+    if (engine.checking) {
+      notice("Waiting for the latest tensor shapes. Try again in a moment.");
+      return;
+    }
+    const next = projectResidualSkips(graphRef.current, id, analysis);
+    if (!next) {
+      notice(
+        "A 1×1 convolution cannot match these branches automatically. Check the input shapes or graph size limit.",
+        true,
+      );
+      return;
+    }
+    commit(next);
+    select(id);
+    notice(
+      "Added explicit 1×1 skip projections. Select them to inspect channels and stride.",
+    );
+  };
+  const expandStage = (id: string) => {
+    const next = expandConvNeXtStage(graphRef.current, id);
+    if (!next) {
+      notice(
+        "This stage cannot be expanded within the graph size limit.",
+        true,
+      );
+      return;
+    }
+    commit(next);
+    select(id);
+    notice(
+      "Stage expanded into individually editable residual blocks. Undo restores the grouped stage.",
+    );
+  };
+  const swapInputs = (id: string) => {
+    const current = graphRef.current;
+    const incoming = current.edges.filter((e) => e.target === id);
+    if (incoming.length !== 2) return;
+    let index = 0;
+    commit({
+      ...current,
+      edges: current.edges.map((e) =>
+        e.target === id ? incoming[1 - index++] : e,
+      ),
+    });
+  };
+  const undo = useCallback(() => {
+    const previous = history.current.past.pop();
+    if (!previous) return;
+    history.current.future.push(cleanGraph(graphRef.current));
+    graphRef.current = previous;
+    setGraph(previous);
+    setHistoryVersion((v) => v + 1);
+    select(null);
+  }, [select]);
+  const redo = useCallback(() => {
+    const next = history.current.future.pop();
+    if (!next) return;
+    history.current.past.push(cleanGraph(graphRef.current));
+    graphRef.current = next;
+    setGraph(next);
+    setHistoryVersion((v) => v + 1);
+    select(null);
+  }, [select]);
+  const saveFile = useCallback(() => {
+    const current = graphRef.current;
+    download(
+      JSON.stringify(cleanGraph(current), null, 2),
+      `${fileName(current.name)}.vizml.json`,
+    );
+    notice("Architecture saved as a portable graph file.");
+  }, [notice]);
+  useEffect(() => {
+    const keyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (event.key === "Escape") {
+        setDialog(null);
+        setExampleMenu(false);
+        select(null);
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key === "s") {
+        event.preventDefault();
+        saveFile();
+        return;
+      }
+      if (
+        ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName) ||
+        target.isContentEditable
+      )
+        return;
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (selected) {
+          event.preventDefault();
+          deleteNode(selected);
+        } else if (selectedEdge) {
+          event.preventDefault();
+          disconnect(selectedEdge);
+        }
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        event.shiftKey ? redo() : undo();
+      }
+      if (event.key.toLowerCase() === "f") fit();
+      if (event.key === "?") setDialog("help");
+    };
+    window.addEventListener("keydown", keyDown);
+    return () => window.removeEventListener("keydown", keyDown);
+  }, [
+    selected,
+    selectedEdge,
+    deleteNode,
+    disconnect,
+    undo,
+    redo,
+    saveFile,
+    fit,
+    select,
+  ]);
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange<LayerNodeType>[]) => {
+      const changesToApply = changes.filter((c) => c.type !== "select" && !(graphRef.current.mode === "schematic" && c.type === "remove"));
+      if (!changesToApply.length) return;
+      const current = graphRef.current;
+      commit(
+        { ...current, nodes: applyNodeChanges(changesToApply, current.nodes) },
+        false,
+      );
+    },
+    [commit],
+  );
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      const changesToApply = changes.filter((c) => c.type !== "select" && !(graphRef.current.mode === "schematic" && c.type === "remove"));
+      if (changesToApply.length)
+        commit(
+          {
+            ...graphRef.current,
+            edges: applyEdgeChanges(changesToApply, graphRef.current.edges),
+          },
+          false,
+        );
+    },
+    [commit],
+  );
+  const loadExample = (key: string) => {
+    const next = examples[key]();
+    commit(next);
+    select(null);
+    setScope(preferredSnapshotScope(next));
+    setExampleMenu(false);
+    setExpanded(false);
+    setTimeout(fit, 50);
+    notice(
+      key === "blank"
+        ? "A fresh canvas. Start with an input."
+        : "Example loaded. Your previous graph is available with Undo.",
+    );
+  };
+  const displayNodes = viewGraph.nodes.map((n) => ({
+    ...n,
+    selected: n.id === selected,
+  }));
+  const displayEdges = viewGraph.edges.map((e) => {
+    const target = graph.nodes.find((n) => n.id === e.target);
+    const source = graph.nodes.find((n) => n.id === e.source);
+    const cross =
+      target?.data.kind === "cross_attention" ||
+      (target?.data.kind === "transformer_block" &&
+        target.data.params.mode === "cross");
+    const context =
+      cross &&
+      graph.edges.filter((link) => link.target === e.target)[1]?.id === e.id;
+    const color =
+      target?.data.kind === "residual"
+        ? catalog.residual.color
+        : source
+          ? catalog[source.data.kind].color
+          : "#a3b681";
+    return {
+      ...e,
+      sourceHandle: "out",
+      targetHandle: "in",
+      type: ["identity_skip", "detail_skip"].includes(String(e.data?.role)) ? "skip" : "default",
+      selected: e.id === selectedEdge,
+      label: cross ? (context ? "K / V" : "Query") : e.label,
+      labelStyle: { fill: "#ddadd2", fontSize: 9 },
+      labelBgStyle: { fill: "#1c231a", fillOpacity: 0.95 },
+      style: {
+        stroke: e.id === selectedEdge ? "#d8edba" : color,
+        strokeWidth: e.id === selectedEdge ? 2.5 : 1.6,
+        opacity: e.id === selectedEdge ? 1 : 0.65,
+        strokeDasharray: context || ["identity_skip", "detail_skip"].includes(String(e.data?.role)) ? "5 4" : undefined,
+      },
+    };
+  });
+  const activeNode = graph.nodes.find((n) => n.id === selected);
+  const issues = [...(analysis?.errors ?? []), ...(analysis?.warnings ?? [])];
+  const canBuild =
+    !!analysis?.valid &&
+    analysis.executable !== false &&
+    analysis.outputs.length > 0 &&
+    engine.status === "connected" &&
+    !engine.checking;
+  const helpItems = [
+    ["Add a block", "Click the library or drag a block onto the graph."],
+    [
+      "Connect layers",
+      "Drag from a right port to a left port. A layer can have multiple dependencies.",
+    ],
+    [
+      "Compose branches",
+      "Incoming branches concatenate in connection order. Grid + vector becomes one feature vector.",
+    ],
+    [
+      "Add a residual",
+      "Connect two matching tensors to a Residual stream block.",
+    ],
+    [
+      "Inspect the model",
+      "Select a layer in either view. Drag the 3D view to orbit and scroll to zoom.",
+    ],
+    [
+      "Build with PyTorch",
+      "Verify builds a real nn.Module on the meta device. Export downloads standalone Python.",
+    ],
+  ];
+
+  return (
+    <div className={`app-shell ${schematic ? "snapshot-mode" : ""}`}>
+      <header className="topbar">
+        <a className="brand" href="/" aria-label="vizml home">
+          <span className="brand-mark">
+            <svg viewBox="0 0 28 28" fill="none">
+              <path
+                d="m5 8 9 14 9-14M10 8l4 6 4-6"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <span>
+            vizml<span className="brand-period">.</span>
+          </span>
+          <span className="studio-tag">STUDIO</span>
+        </a>
+        <div className="project-breadcrumb">
+          <span className="topbar-divider" />
+          <span className="workspace-label">Workspace</span>
+          <ChevronRight size={13} />
+          <input
+            aria-label="Architecture name"
+            value={graph.name}
+            maxLength={100}
+            onChange={(e) =>
+              commit({ ...graph, name: e.target.value }, true, true)
+            }
+          />
+          <span
+            className="saved-status"
+            title={saved ? "Saved in this browser" : "Saving…"}
+          >
+            {saved ? <Check size={12} /> : <span className="saving-dot" />}
+          </span>
+        </div>
+        <div className="topbar-actions">
+          <div className="example-picker" ref={menu}>
+            <button
+              className={`quiet-button example-trigger ${exampleMenu ? "active" : ""}`}
+              onClick={() => setExampleMenu(!exampleMenu)}
+            >
+              <LayoutGrid size={14} />
+              Templates
+              <ChevronDown size={12} />
+            </button>
+            {exampleMenu && <TemplateMenu onLoad={loadExample} />}
+          </div>
+          <span className="topbar-divider" />
+          <CheckpointControls graph={graph} valid={!!analysis?.valid && !engine.checking} canBuild={canBuild && !engine.busy}
+            onSave={saveFile} onPython={() => engine.request("export")} onNotice={notice}
+            onImport={imported => { commit(imported); select(null); setExpanded(false); setScope(preferredSnapshotScope(imported)); setTimeout(fit, 100); }} />
+        </div>
+      </header>
+
+      <div className={`workbench ${showLibrary && !schematic ? "" : "library-hidden"}`}>
+        {showLibrary && !schematic && <Library onAdd={addNode} />}
+        <main className={`main-workspace ${expanded ? "model-expanded" : ""}`}>
+          <ResizablePanels
+            expanded={expanded}
+            architecture={
+              <Architecture
+                graph={viewGraph}
+                analysis={analysis}
+                selected={selected}
+                onSelect={select}
+                expanded={expanded}
+                onExpand={() => setExpanded(!expanded)}
+              />
+            }
+          >
+            <section className="graph-panel">
+              <div className="panel-header">
+                <div className="panel-title">
+                  <GitBranch size={14} />
+                  <span>Model graph</span>
+                  <span className="panel-subtitle">
+                    {schematic ? graph.metadata?.proposal ? "Untrained proposal" : "Supplied schematic" : "Compose your architecture"}
+                  </span>
+                </div>
+                <div className="panel-tools">
+                  {schematic && <select className="snapshot-scope" aria-label="Focus model branch" value={scope} onChange={e => { setScope(e.target.value); select(null); setTimeout(fit, 80); }}>
+                    {scopes.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                  </select>}
+                  {schematic && <button className="icon-button" aria-label="Inspect supplied schematic" title="Source descriptions and snapshot claims" onClick={() => { select(null); setShowSnapshotInfo(!showSnapshotInfo); }}><FileSearch size={14} /></button>}
+                  <button
+                    disabled={schematic}
+                    className={`quiet-button add-block-button ${showLibrary ? "active" : ""}`}
+                    onClick={() => setShowLibrary(!showLibrary)}
+                    aria-label="Add block"
+                    title="Toggle building blocks"
+                  >
+                    {showLibrary ? (
+                      <PanelLeftClose size={14} />
+                    ) : (
+                      <Plus size={14} />
+                    )}
+                    Add block
+                  </button>
+                  <button
+                    className="icon-button"
+                    disabled={!history.current.past.length}
+                    onClick={undo}
+                    aria-label="Undo"
+                    title="Undo · ⌘Z"
+                  >
+                    <Undo2 size={14} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    disabled={!history.current.future.length}
+                    onClick={redo}
+                    aria-label="Redo"
+                    title="Redo · ⌘⇧Z"
+                  >
+                    <Redo2 size={14} />
+                  </button>
+                  <span className="tool-separator" />
+                  <button
+                    className="quiet-button layout-button"
+                    onClick={() => {
+                      commit(autoLayout(graph, analysis));
+                      setTimeout(fit, 30);
+                    }}
+                  >
+                    <LayoutGrid size={13} />
+                    Auto layout
+                  </button>
+                  <button
+                    className="icon-button"
+                    onClick={fit}
+                    title="Fit graph · F"
+                    aria-label="Fit graph"
+                  >
+                    <Expand size={14} />
+                  </button>
+                </div>
+              </div>
+              <div
+                className="graph-canvas"
+                ref={graphPane}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "copy";
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const kind = event.dataTransfer.getData(
+                    "application/vizml",
+                  ) as Kind;
+                  if (Object.hasOwn(catalog, kind))
+                    addNode(
+                      kind,
+                      flow.screenToFlowPosition({
+                        x: event.clientX,
+                        y: event.clientY,
+                      }),
+                    );
+                }}
+              >
+                <AnalysisContext.Provider value={analysis}>
+                  <ReactFlow<LayerNodeType>
+                    nodes={displayNodes}
+                    edges={displayEdges}
+                    nodeTypes={nodeTypes}
+                    edgeTypes={edgeTypes}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onNodeClick={(_, node) => select(node.id)}
+                    onEdgeClick={(_, edge) => {
+                      setSelectedEdge(edge.id);
+                      setSelected(null);
+                    }}
+                    onPaneClick={() => select(null)}
+                    onNodeDragStart={snapshot}
+                    onConnect={(connection: Connection) => {
+                      if (connection.source && connection.target)
+                        connect(connection.source, connection.target);
+                    }}
+                    isValidConnection={(connection) =>
+                      canConnect(
+                        graphRef.current,
+                        connection.source,
+                        connection.target,
+                      )
+                    }
+                    defaultViewport={{ x: 0, y: 0, zoom: 0.7 }}
+                    onInit={(instance) => {
+                      if (graphRef.current.mode === "schematic") {
+                        setTimeout(() => instance.fitView({ padding: 0.2, maxZoom: 0.9 }), 100);
+                        return;
+                      }
+                      const target =
+                        graphRef.current.nodes.find((n) => n.id === "conv2") ??
+                        graphRef.current.nodes[
+                          Math.floor(graphRef.current.nodes.length / 2)
+                        ];
+                      if (target)
+                        setTimeout(
+                          () =>
+                            instance.setCenter(
+                              target.position.x + 150,
+                              target.position.y + 120,
+                              { zoom: 0.7 },
+                            ),
+                          80,
+                        );
+                    }}
+                    minZoom={schematic ? 0.025 : 0.15}
+                    nodesConnectable={!schematic}
+                    maxZoom={1.7}
+                    deleteKeyCode={null}
+                    panOnScroll
+                    colorMode="dark"
+                    connectionLineStyle={{
+                      stroke: "#c1ed84",
+                      strokeWidth: 1.5,
+                    }}
+                  >
+                    <Background
+                      variant={BackgroundVariant.Dots}
+                      gap={20}
+                      size={1}
+                      color="#354031"
+                    />
+                    <MiniMap
+                      nodeColor={(node) =>
+                        catalog[(node.data as LayerNodeType["data"]).kind].color
+                      }
+                      maskColor="#101510c4"
+                      bgColor="#151b14"
+                      nodeStrokeWidth={0}
+                      pannable
+                      zoomable
+                      position="bottom-right"
+                    />
+                  </ReactFlow>
+                </AnalysisContext.Provider>
+                {!graph.nodes.length && (
+                  <div className="graph-empty">
+                    <Plus size={23} />
+                    <span>Your canvas is open.</span>
+                    <small>Choose an input from the building blocks.</small>
+                  </div>
+                )}
+                <div className="graph-zoom">
+                  <button
+                    onClick={() => flow.zoomOut({ duration: 200 })}
+                    aria-label="Zoom out"
+                  >
+                    <Minus size={14} />
+                  </button>
+                  <span>ZOOM</span>
+                  <button
+                    onClick={() => flow.zoomIn({ duration: 200 })}
+                    aria-label="Zoom in"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+                <span className="graph-instruction">
+                  {schematic ? `${viewGraph.nodes.length} of ${graph.nodes.length} nodes · supplied forward connections` : "Connect ports to declare dependencies"}
+                </span>
+              </div>
+            </section>
+          </ResizablePanels>
+        </main>
+        <Inspector
+          showSnapshotOverview={showSnapshotInfo}
+          node={activeNode}
+          graph={graph}
+          analysis={analysis}
+          onUpdate={updateNode}
+          onSelect={select}
+          onDelete={deleteNode}
+          onDuplicate={duplicate}
+          onConnect={connect}
+          onDisconnect={disconnect}
+          onProjectResidual={projectResidual}
+          onExpandStage={expandStage}
+          onSwapInputs={swapInputs}
+        />
+      </div>
+      <StatusBar
+        graph={graph}
+        analysis={analysis}
+        engineStatus={engine.status}
+        checking={engine.checking}
+        busy={engine.busy}
+        verified={!!engine.compilation}
+        canBuild={canBuild}
+        saved={saved}
+        onIssues={() => setDialog("issues")}
+        onVerify={() => engine.request("compile")}
+        onHelp={() => setDialog("help")}
+      />
+      {toast && (
+        <div
+          className={`toast ${toast.error ? "toast-error" : ""}`}
+          role="status"
+        >
+          {toast.error ? <CircleAlert size={16} /> : <CheckCircle2 size={16} />}
+          <span>{toast.message}</span>
+          <button onClick={() => setToast(null)} aria-label="Dismiss message">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {dialog && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setDialog(null);
+          }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dialog-title"
+          >
+            <button
+              className="modal-close icon-button"
+              onClick={() => setDialog(null)}
+              aria-label="Close dialog"
+            >
+              <X size={18} />
+            </button>
+            {dialog === "help" ? (
+              <>
+                <span className="eyebrow">A SHORT FIELD GUIDE</span>
+                <h2 id="dialog-title">From blocks to a model.</h2>
+                <p className="modal-intro">
+                  The graph is your intention. The 3D view is what it becomes.
+                </p>
+                <div className="help-items">
+                  {helpItems.map(([title, description], index) => (
+                    <div key={title}>
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <div>
+                        <h3>{title}</h3>
+                        <p>{description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="shortcut-row">
+                  <span>
+                    <kbd>⌘ Z</kbd> Undo
+                  </span>
+                  <span>
+                    <kbd>⌘ S</kbd> Save
+                  </span>
+                  <span>
+                    <kbd>F</kbd> Fit graph
+                  </span>
+                  <span>
+                    <kbd>⌫</kbd> Delete
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="eyebrow">ARCHITECTURE CHECK</span>
+                <h2 id="dialog-title">
+                  {analysis?.valid
+                    ? schematic ? "Snapshot structure checked." : "Everything adds up."
+                    : "A few things to resolve."}
+                </h2>
+                <p className="modal-intro">
+                  {schematic ? "Declared counts and tensor ownership are checked for consistency. Shapes, operations and forward connections remain source claims." : "Shapes are inferred analytically. No weights or training data are allocated."}
+                </p>
+                {issues.length ? (
+                  <div className="issue-list">
+                    {issues.map((issue, i) => (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          if (issue.node_id) {
+                            select(issue.node_id);
+                            setDialog(null);
+                          }
+                        }}
+                      >
+                        <CircleAlert size={16} />
+                        <span>
+                          {issue.node_id && (
+                            <strong>
+                              {
+                                graph.nodes.find((n) => n.id === issue.node_id)
+                                  ?.data.label
+                              }
+                            </strong>
+                          )}
+                          {issue.message}
+                        </span>
+                        {issue.node_id && <ArrowUpRight size={14} />}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="all-good">
+                    <CheckCircle2 size={28} />
+                    <span>
+                      All dependencies and tensor shapes are compatible.
+                    </span>
+                  </div>
+                )}
+                {engine.compilation && (
+                  <div className="compile-result">
+                    <h3>Verified with real PyTorch modules</h3>
+                    <p>
+                      {engine.compilation.parameters.toLocaleString()}{" "}
+                      parameters · meta device · 0 bytes of weight storage
+                    </p>
+                    {Object.entries(engine.compilation.outputs).map(
+                      ([id, shape]) => (
+                        <div key={id}>
+                          <span>
+                            {graph.nodes.find((n) => n.id === id)?.data.label}
+                          </span>
+                          <code>{shapeText(shape)}</code>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

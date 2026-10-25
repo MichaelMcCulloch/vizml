@@ -1,0 +1,370 @@
+{
+  "version": 1,
+  "name": "DINOv3 · ConvNeXt Tiny",
+  "template": "dinov3_convnext_tiny",
+  "nodes": [
+    {
+      "id": "image",
+      "type": "layer",
+      "position": {
+        "x": 0,
+        "y": 80
+      },
+      "data": {
+        "kind": "grid_input",
+        "label": "Image · RGB",
+        "params": {
+          "width": 256,
+          "height": 256,
+          "channels": 3
+        }
+      }
+    },
+    {
+      "id": "stem",
+      "type": "layer",
+      "position": {
+        "x": 245,
+        "y": 80
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Patchify stem · 4×4",
+        "params": {
+          "channels": 96,
+          "kernel": 4,
+          "stride": 4,
+          "padding": 0,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none"
+        }
+      }
+    },
+    {
+      "id": "stem_norm",
+      "type": "layer",
+      "position": {
+        "x": 490,
+        "y": 80
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Stem normalization",
+        "params": {
+          "eps": 0.000001
+        }
+      }
+    },
+    {
+      "id": "stage1",
+      "type": "layer",
+      "position": {
+        "x": 735,
+        "y": 80
+      },
+      "data": {
+        "kind": "convnext_stage",
+        "label": "Stage 1 · 3 blocks",
+        "params": {
+          "blocks": 3,
+          "kernel": 7,
+          "expansion": 4,
+          "layer_scale": 0.000001,
+          "eps": 0.000001,
+          "drop_path": 0,
+          "stage": 1
+        }
+      }
+    },
+    {
+      "id": "down1_norm",
+      "type": "layer",
+      "position": {
+        "x": 980,
+        "y": 80
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Transition 1 · normalize",
+        "params": {
+          "eps": 0.000001
+        }
+      }
+    },
+    {
+      "id": "down1",
+      "type": "layer",
+      "position": {
+        "x": 1225,
+        "y": 80
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Transition 1 · downsample",
+        "params": {
+          "channels": 192,
+          "kernel": 2,
+          "stride": 2,
+          "padding": 0,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none"
+        }
+      }
+    },
+    {
+      "id": "stage2",
+      "type": "layer",
+      "position": {
+        "x": 1470,
+        "y": 80
+      },
+      "data": {
+        "kind": "convnext_stage",
+        "label": "Stage 2 · 3 blocks",
+        "params": {
+          "blocks": 3,
+          "kernel": 7,
+          "expansion": 4,
+          "layer_scale": 0.000001,
+          "eps": 0.000001,
+          "drop_path": 0,
+          "stage": 2
+        }
+      }
+    },
+    {
+      "id": "down2_norm",
+      "type": "layer",
+      "position": {
+        "x": 1715,
+        "y": 80
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Transition 2 · normalize",
+        "params": {
+          "eps": 0.000001
+        }
+      }
+    },
+    {
+      "id": "down2",
+      "type": "layer",
+      "position": {
+        "x": 1960,
+        "y": 80
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Transition 2 · downsample",
+        "params": {
+          "channels": 384,
+          "kernel": 2,
+          "stride": 2,
+          "padding": 0,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none"
+        }
+      }
+    },
+    {
+      "id": "stage3",
+      "type": "layer",
+      "position": {
+        "x": 2205,
+        "y": 80
+      },
+      "data": {
+        "kind": "convnext_stage",
+        "label": "Stage 3 · 9 blocks",
+        "params": {
+          "blocks": 9,
+          "kernel": 7,
+          "expansion": 4,
+          "layer_scale": 0.000001,
+          "eps": 0.000001,
+          "drop_path": 0,
+          "stage": 3
+        }
+      }
+    },
+    {
+      "id": "down3_norm",
+      "type": "layer",
+      "position": {
+        "x": 2450,
+        "y": 80
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Transition 3 · normalize",
+        "params": {
+          "eps": 0.000001
+        }
+      }
+    },
+    {
+      "id": "down3",
+      "type": "layer",
+      "position": {
+        "x": 2695,
+        "y": 80
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Transition 3 · downsample",
+        "params": {
+          "channels": 768,
+          "kernel": 2,
+          "stride": 2,
+          "padding": 0,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none"
+        }
+      }
+    },
+    {
+      "id": "stage4",
+      "type": "layer",
+      "position": {
+        "x": 2940,
+        "y": 80
+      },
+      "data": {
+        "kind": "convnext_stage",
+        "label": "Stage 4 · 3 blocks",
+        "params": {
+          "blocks": 3,
+          "kernel": 7,
+          "expansion": 4,
+          "layer_scale": 0.000001,
+          "eps": 0.000001,
+          "drop_path": 0,
+          "stage": 4
+        }
+      }
+    },
+    {
+      "id": "global_pool",
+      "type": "layer",
+      "position": {
+        "x": 3185,
+        "y": 80
+      },
+      "data": {
+        "kind": "global_avgpool",
+        "label": "Global average",
+        "params": {}
+      }
+    },
+    {
+      "id": "final_norm",
+      "type": "layer",
+      "position": {
+        "x": 3430,
+        "y": 80
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Final normalization",
+        "params": {
+          "eps": 0.000001
+        }
+      }
+    },
+    {
+      "id": "embedding",
+      "type": "layer",
+      "position": {
+        "x": 3675,
+        "y": 80
+      },
+      "data": {
+        "kind": "embedding",
+        "label": "768-D image embedding",
+        "params": {}
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "image-stem",
+      "source": "image",
+      "target": "stem"
+    },
+    {
+      "id": "stem-stem_norm",
+      "source": "stem",
+      "target": "stem_norm"
+    },
+    {
+      "id": "stem_norm-stage1",
+      "source": "stem_norm",
+      "target": "stage1"
+    },
+    {
+      "id": "stage1-down1_norm",
+      "source": "stage1",
+      "target": "down1_norm"
+    },
+    {
+      "id": "down1_norm-down1",
+      "source": "down1_norm",
+      "target": "down1"
+    },
+    {
+      "id": "down1-stage2",
+      "source": "down1",
+      "target": "stage2"
+    },
+    {
+      "id": "stage2-down2_norm",
+      "source": "stage2",
+      "target": "down2_norm"
+    },
+    {
+      "id": "down2_norm-down2",
+      "source": "down2_norm",
+      "target": "down2"
+    },
+    {
+      "id": "down2-stage3",
+      "source": "down2",
+      "target": "stage3"
+    },
+    {
+      "id": "stage3-down3_norm",
+      "source": "stage3",
+      "target": "down3_norm"
+    },
+    {
+      "id": "down3_norm-down3",
+      "source": "down3_norm",
+      "target": "down3"
+    },
+    {
+      "id": "down3-stage4",
+      "source": "down3",
+      "target": "stage4"
+    },
+    {
+      "id": "stage4-global_pool",
+      "source": "stage4",
+      "target": "global_pool"
+    },
+    {
+      "id": "global_pool-final_norm",
+      "source": "global_pool",
+      "target": "final_norm"
+    },
+    {
+      "id": "final_norm-embedding",
+      "source": "final_norm",
+      "target": "embedding"
+    }
+  ]
+}

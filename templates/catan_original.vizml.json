@@ -1,0 +1,7004 @@
+{
+  "version": 1,
+  "name": "Catan · original residual CNN",
+  "nodes": [
+    {
+      "id": "observation",
+      "type": "layer",
+      "position": {
+        "x": 0,
+        "y": 1270
+      },
+      "data": {
+        "kind": "feature_input",
+        "label": "Viewer-relative observation",
+        "params": {
+          "features": 13708
+        },
+        "description": "The actual model input: 13,708 encoded observation values for the acting seat. Board planes, public context, cargo descriptors and legal-action lookup features are derived from this same observation.",
+        "output_shape": [
+          "B",
+          13708
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "board",
+      "type": "layer",
+      "position": {
+        "x": 360,
+        "y": 870
+      },
+      "data": {
+        "kind": "grid_input",
+        "label": "Board feature planes: 45 × 49 × 1,390",
+        "params": {
+          "width": 49,
+          "height": 45,
+          "channels": 1390
+        },
+        "description": "HexPlanes scatters viewer-relative hex, edge, intersection, ship and mission features onto a fixed rectangular canvas. The 1,390 channels mix categorical indicators, quantities, posterior probabilities and geometry; they are not all one-hot image colors.",
+        "output_shape": [
+          "B",
+          1390,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "feature_groups": {
+          "tiles": 238,
+          "edges": 5,
+          "sites": 130,
+          "ships": 960,
+          "villages": 16,
+          "lairs": 32,
+          "pirate": 3,
+          "geometry": 6
+        },
+        "encoding_trainable": false,
+        "native_grid_contains": {
+          "hexes": 72,
+          "edges": 247,
+          "sites": 176
+        }
+      }
+    },
+    {
+      "id": "context",
+      "type": "layer",
+      "position": {
+        "x": 360,
+        "y": 1570
+      },
+      "data": {
+        "kind": "feature_input",
+        "label": "Global context: 578 features",
+        "params": {
+          "features": 578
+        },
+        "description": "HexContext gathers seat-relative public counters, mission progress, pieces, hands/posteriors, resource covariance and fixed global features. Each encoder learns its own 578→128 context MLP.",
+        "output_shape": [
+          "B",
+          578
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "legal",
+      "type": "layer",
+      "position": {
+        "x": 9300,
+        "y": 220
+      },
+      "data": {
+        "kind": "feature_input",
+        "label": "Legal action IDs: variable L",
+        "params": {
+          "features": 512
+        },
+        "description": "The second actual model input is a list of L ordered legal action IDs. 512 is the compiled serving padding floor, not the action-space size or a fixed number of choices. Padding uses ID −1. The complete action vocabulary contains 82,819 IDs.",
+        "output_shape": [
+          "B",
+          "L"
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "symbolic_width": "L",
+        "serving_legal_floor": 512,
+        "total_action_vocabulary": 82819
+      }
+    },
+    {
+      "id": "actor_stem",
+      "type": "layer",
+      "position": {
+        "x": 720,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Actor stem: 1,390→96",
+        "params": {
+          "channels": 96,
+          "input_channels": 1390,
+          "kernel": 1,
+          "stride": 1,
+          "padding": 0,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "A learned 1×1 convolution compresses the feature channels independently at every canvas location. Selected channel rows also have entity-local fixed affine offsets from the refinement trial. The original weights still train; present purity is not assumed.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 133536,
+        "module_paths": [
+          "actor.encoder.stem"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.stem.weight",
+            "shape": [
+              96,
+              1390,
+              1,
+              1
+            ],
+            "elements": 133440
+          },
+          {
+            "name": "actor.encoder.stem.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "refinements": [
+          {
+            "role": "actor",
+            "channel": 86,
+            "kind": "sites",
+            "concept": "own harbor settlement",
+            "mask_plane": 1386,
+            "label_plane": 244,
+            "mandatory": true,
+            "class_means": [
+              0.08571788668632507,
+              0.8624792695045471
+            ],
+            "label": "own harbor settlement"
+          }
+        ],
+        "refinement_formula": "Selected entity locations use W[channel]+weight_offset and b[channel]+bias_offset; other locations use W,b.",
+        "refinement_buffers": {
+          "refinement_channels": {
+            "shape": [
+              1
+            ],
+            "trainable": false
+          },
+          "refinement_masks": {
+            "shape": [
+              1
+            ],
+            "trainable": false
+          },
+          "weight_offsets": {
+            "shape": [
+              1,
+              1390,
+              1,
+              1
+            ],
+            "trainable": false
+          },
+          "bias_offsets": {
+            "shape": [
+              1
+            ],
+            "trainable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "actor_context",
+      "type": "layer",
+      "position": {
+        "x": 720,
+        "y": 300
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Actor context MLP: 578→128",
+        "params": {
+          "units": 128,
+          "input_features": 578,
+          "activation": "silu",
+          "bias": true
+        },
+        "description": "Learn a global context embedding, then apply SiLU.",
+        "output_shape": [
+          "B",
+          128
+        ],
+        "parameter_count": 74112,
+        "module_paths": [
+          "actor.encoder.context.0"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.context.0.weight",
+            "shape": [
+              128,
+              578
+            ],
+            "elements": 73984
+          },
+          {
+            "name": "actor.encoder.context.0.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_context_norm",
+      "type": "layer",
+      "position": {
+        "x": 1020,
+        "y": 300
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Context LayerNorm: 128",
+        "params": {
+          "features": 128,
+          "axis": "channels",
+          "eps": 1e-05,
+          "affine": true
+        },
+        "description": "Normalize the 128 learned context components within each observation; this is not BatchNorm.",
+        "output_shape": [
+          "B",
+          128
+        ],
+        "parameter_count": 256,
+        "module_paths": [
+          "actor.encoder.context.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.context.2.weight",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          },
+          {
+            "name": "actor.encoder.context.2.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_condition",
+      "type": "layer",
+      "position": {
+        "x": 1320,
+        "y": 300
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Context → 96 channel biases",
+        "params": {
+          "units": 96,
+          "input_features": 128,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Project the global context to 96 values and broadcast the same channel biases across all 45×49 locations.",
+        "output_shape": [
+          "B",
+          96
+        ],
+        "parameter_count": 12384,
+        "module_paths": [
+          "actor.encoder.condition"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.condition.weight",
+            "shape": [
+              96,
+              128
+            ],
+            "elements": 12288
+          },
+          {
+            "name": "actor.encoder.condition.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_conditioned",
+      "type": "layer",
+      "position": {
+        "x": 1620,
+        "y": 660
+      },
+      "data": {
+        "kind": "add",
+        "label": "Add broadcast context to stem",
+        "params": {},
+        "description": "Elementwise addition of the stem map and broadcast context. This is context conditioning, not concatenation.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_block1_conv1",
+      "type": "layer",
+      "position": {
+        "x": 1920,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 1 · conv 1 · dilation 1",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 1,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 1. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.0.branch.0",
+          "actor.encoder.blocks.0.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.0.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.0.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.0.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.0.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block1_conv2",
+      "type": "layer",
+      "position": {
+        "x": 2190,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 1 · conv 2 · dilation 1",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 1,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 1. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.0.branch.3",
+          "actor.encoder.blocks.0.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.0.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.0.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.0.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.0.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block1_add",
+      "type": "layer",
+      "position": {
+        "x": 2460,
+        "y": 660
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 1 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_block2_conv1",
+      "type": "layer",
+      "position": {
+        "x": 2730,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 2 · conv 1 · dilation 2",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 2,
+          "dilation": 2,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 2. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.1.branch.0",
+          "actor.encoder.blocks.1.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.1.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.1.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.1.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.1.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block2_conv2",
+      "type": "layer",
+      "position": {
+        "x": 3000,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 2 · conv 2 · dilation 2",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 2,
+          "dilation": 2,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 2. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.1.branch.3",
+          "actor.encoder.blocks.1.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.1.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.1.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.1.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.1.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block2_add",
+      "type": "layer",
+      "position": {
+        "x": 3270,
+        "y": 660
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 2 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_block3_conv1",
+      "type": "layer",
+      "position": {
+        "x": 3540,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 3 · conv 1 · dilation 4",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 4,
+          "dilation": 4,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 4. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.2.branch.0",
+          "actor.encoder.blocks.2.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.2.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.2.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.2.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.2.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block3_conv2",
+      "type": "layer",
+      "position": {
+        "x": 3810,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 3 · conv 2 · dilation 4",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 4,
+          "dilation": 4,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 4. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.2.branch.3",
+          "actor.encoder.blocks.2.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.2.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.2.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.2.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.2.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block3_add",
+      "type": "layer",
+      "position": {
+        "x": 4080,
+        "y": 660
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 3 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_block4_conv1",
+      "type": "layer",
+      "position": {
+        "x": 4350,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 4 · conv 1 · dilation 8",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 8,
+          "dilation": 8,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 8. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.3.branch.0",
+          "actor.encoder.blocks.3.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.3.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.3.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.3.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.3.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block4_conv2",
+      "type": "layer",
+      "position": {
+        "x": 4620,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 4 · conv 2 · dilation 8",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 8,
+          "dilation": 8,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 8. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.3.branch.3",
+          "actor.encoder.blocks.3.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.3.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.3.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.3.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.3.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block4_add",
+      "type": "layer",
+      "position": {
+        "x": 4890,
+        "y": 660
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 4 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_block5_conv1",
+      "type": "layer",
+      "position": {
+        "x": 5160,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 5 · conv 1 · dilation 1",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 1,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 1. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.4.branch.0",
+          "actor.encoder.blocks.4.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.4.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.4.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.4.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.4.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block5_conv2",
+      "type": "layer",
+      "position": {
+        "x": 5430,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 5 · conv 2 · dilation 1",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 1,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 1. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.4.branch.3",
+          "actor.encoder.blocks.4.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.4.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.4.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.4.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.4.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block5_add",
+      "type": "layer",
+      "position": {
+        "x": 5700,
+        "y": 660
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 5 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_block6_conv1",
+      "type": "layer",
+      "position": {
+        "x": 5970,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 6 · conv 1 · dilation 2",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 2,
+          "dilation": 2,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 2. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.5.branch.0",
+          "actor.encoder.blocks.5.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.5.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.5.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.5.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.5.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block6_conv2",
+      "type": "layer",
+      "position": {
+        "x": 6240,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 6 · conv 2 · dilation 2",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 2,
+          "dilation": 2,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 2. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.5.branch.3",
+          "actor.encoder.blocks.5.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.5.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.5.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.5.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.5.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block6_add",
+      "type": "layer",
+      "position": {
+        "x": 6510,
+        "y": 660
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 6 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_block7_conv1",
+      "type": "layer",
+      "position": {
+        "x": 6780,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 7 · conv 1 · dilation 4",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 4,
+          "dilation": 4,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 4. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.6.branch.0",
+          "actor.encoder.blocks.6.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.6.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.6.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.6.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.6.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block7_conv2",
+      "type": "layer",
+      "position": {
+        "x": 7050,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 7 · conv 2 · dilation 4",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 4,
+          "dilation": 4,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 4. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.6.branch.3",
+          "actor.encoder.blocks.6.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.6.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.6.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.6.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.6.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block7_add",
+      "type": "layer",
+      "position": {
+        "x": 7320,
+        "y": 660
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 7 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_block8_conv1",
+      "type": "layer",
+      "position": {
+        "x": 7590,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 8 · conv 1 · dilation 8",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 8,
+          "dilation": 8,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 8. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.7.branch.0",
+          "actor.encoder.blocks.7.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.7.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.7.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.7.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.7.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block8_conv2",
+      "type": "layer",
+      "position": {
+        "x": 7860,
+        "y": 660
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 8 · conv 2 · dilation 8",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 8,
+          "dilation": 8,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 8. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "actor.encoder.blocks.7.branch.3",
+          "actor.encoder.blocks.7.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.blocks.7.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.7.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.blocks.7.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "actor.encoder.blocks.7.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "actor_block8_add",
+      "type": "layer",
+      "position": {
+        "x": 8130,
+        "y": 660
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 8 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_final_norm",
+      "type": "layer",
+      "position": {
+        "x": 8400,
+        "y": 660
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Final spatial LayerNorm",
+        "params": {
+          "features": 96,
+          "axis": "channels",
+          "eps": 1e-05,
+          "affine": true
+        },
+        "description": "Normalize the 96 channels at every canvas location after the eighth residual block.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 192,
+        "module_paths": [
+          "actor.encoder.final.norm"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.final.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "actor.encoder.final.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_mean",
+      "type": "layer",
+      "position": {
+        "x": 8700,
+        "y": 530
+      },
+      "data": {
+        "kind": "globalavgpool2d",
+        "label": "Spatial mean: 96",
+        "params": {
+          "axes": [
+            "height",
+            "width"
+          ]
+        },
+        "description": "Take the mean over all 2,205 canvas locations independently for each channel. This reduces the global readout to 96 values. It does not downsample the spatial stream used by the local policy path.",
+        "output_shape": [
+          "B",
+          96
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_max",
+      "type": "layer",
+      "position": {
+        "x": 8700,
+        "y": 820
+      },
+      "data": {
+        "kind": "globalmaxpool2d",
+        "label": "Spatial maximum: 96",
+        "params": {
+          "axes": [
+            "height",
+            "width"
+          ]
+        },
+        "description": "Take the max over all 2,205 canvas locations independently for each channel. This reduces the global readout to 96 values. It does not downsample the spatial stream used by the local policy path.",
+        "output_shape": [
+          "B",
+          96
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_global_join",
+      "type": "layer",
+      "position": {
+        "x": 9000,
+        "y": 660
+      },
+      "data": {
+        "kind": "concat",
+        "label": "Mean + max + context: 320",
+        "params": {
+          "axis": "features"
+        },
+        "description": "Concatenate 96 spatial means, 96 spatial maxima and the 128-dimensional learned context.",
+        "output_shape": [
+          "B",
+          320
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_state",
+      "type": "layer",
+      "position": {
+        "x": 9300,
+        "y": 660
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Global hidden: 320→256 + SiLU",
+        "params": {
+          "units": 256,
+          "input_features": 320,
+          "activation": "silu",
+          "bias": true
+        },
+        "description": "Learn a global board/context representation from the pooled spatial summaries.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 82176,
+        "module_paths": [
+          "actor.encoder.state.0"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.state.0.weight",
+            "shape": [
+              256,
+              320
+            ],
+            "elements": 81920
+          },
+          {
+            "name": "actor.encoder.state.0.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_state_norm",
+      "type": "layer",
+      "position": {
+        "x": 9600,
+        "y": 660
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Global LayerNorm: 256",
+        "params": {
+          "features": 256,
+          "axis": "channels",
+          "eps": 1e-05,
+          "affine": true
+        },
+        "description": "Normalize the global representation. A configured Dropout(0.1) follows; it is disabled in current PPG.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 512,
+        "module_paths": [
+          "actor.encoder.state.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.state.2.weight",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          },
+          {
+            "name": "actor.encoder.state.2.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_mlp1",
+      "type": "layer",
+      "position": {
+        "x": 9900,
+        "y": 660
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Added MLP depth: 256→256 + SiLU",
+        "params": {
+          "units": 256,
+          "input_features": 256,
+          "activation": "silu",
+          "bias": true
+        },
+        "description": "First layer of the added serial MLP. Its module name is global_residual, but its output is not added to its input.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 65792,
+        "module_paths": [
+          "actor.encoder.global_residual.0"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.global_residual.0.weight",
+            "shape": [
+              256,
+              256
+            ],
+            "elements": 65536
+          },
+          {
+            "name": "actor.encoder.global_residual.0.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_mlp2",
+      "type": "layer",
+      "position": {
+        "x": 10200,
+        "y": 660
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Added MLP output: 256→256",
+        "params": {
+          "units": 256,
+          "input_features": 256,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Second layer of the added serial MLP. This is a plain linear output; there is no residual bypass around the MLP.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 65792,
+        "module_paths": [
+          "actor.encoder.global_residual.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.global_residual.2.weight",
+            "shape": [
+              256,
+              256
+            ],
+            "elements": 65536
+          },
+          {
+            "name": "actor.encoder.global_residual.2.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_entity",
+      "type": "layer",
+      "position": {
+        "x": 8700,
+        "y": 1170
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Local entity projection: 96→32",
+        "params": {
+          "units": 32,
+          "input_features": 96,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Project each of the 2,205 location vectors to 32 components before gathering board entities.",
+        "output_shape": [
+          "B",
+          2205,
+          32
+        ],
+        "parameter_count": 3104,
+        "module_paths": [
+          "actor.encoder.entity"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.entity.weight",
+            "shape": [
+              32,
+              96
+            ],
+            "elements": 3072
+          },
+          {
+            "name": "actor.encoder.entity.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ],
+        "effective_use": "Legal-action scoring"
+      }
+    },
+    {
+      "id": "actor_ship",
+      "type": "layer",
+      "position": {
+        "x": 8700,
+        "y": 1470
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Ship attributes: 79→32",
+        "params": {
+          "units": 32,
+          "input_features": 79,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Project 60 cargo components, five ship-status fields, two ownership flags and a 12-way ship identity to 32 components.",
+        "output_shape": [
+          "B",
+          12,
+          32
+        ],
+        "parameter_count": 2560,
+        "module_paths": [
+          "actor.encoder.ship"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.encoder.ship.weight",
+            "shape": [
+              32,
+              79
+            ],
+            "elements": 2528
+          },
+          {
+            "name": "actor.encoder.ship.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ],
+        "effective_use": "Legal-action scoring"
+      }
+    },
+    {
+      "id": "actor_entities",
+      "type": "layer",
+      "position": {
+        "x": 9000,
+        "y": 1170
+      },
+      "data": {
+        "kind": "gather",
+        "label": "Entity table: local position + attributes",
+        "params": {
+          "entity_width": 32
+        },
+        "description": "Gather fixed hex, edge and intersection positions; add projected ship attributes; construct village, lair and shoal descriptors plus a null entity. This local path retains explicit entity locations and bypasses global mean/max pooling.",
+        "output_shape": [
+          "B",
+          526,
+          32
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "current_role": "actor"
+      }
+    },
+    {
+      "id": "value_stem",
+      "type": "layer",
+      "position": {
+        "x": 720,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Value stem: 1,390→96",
+        "params": {
+          "channels": 96,
+          "input_channels": 1390,
+          "kernel": 1,
+          "stride": 1,
+          "padding": 0,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "A learned 1×1 convolution compresses the feature channels independently at every canvas location. Selected channel rows also have entity-local fixed affine offsets from the refinement trial. The original weights still train; present purity is not assumed.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 133536,
+        "module_paths": [
+          "value_encoder.stem"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.stem.weight",
+            "shape": [
+              96,
+              1390,
+              1,
+              1
+            ],
+            "elements": 133440
+          },
+          {
+            "name": "value_encoder.stem.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "refinements": [
+          {
+            "role": "value",
+            "channel": 86,
+            "kind": "sites",
+            "concept": "own harbor settlement",
+            "mask_plane": 1386,
+            "label_plane": 244,
+            "class_means": [
+              0.1815083622932434,
+              1.0702611207962036
+            ],
+            "label": "own harbor settlement"
+          },
+          {
+            "role": "value",
+            "channel": 50,
+            "kind": "hexes",
+            "concept": "unrevealed tile",
+            "mask_plane": 1384,
+            "label_plane": 237,
+            "class_means": [
+              0.4295315742492676,
+              -0.13290853798389435
+            ],
+            "label": "revealed tile"
+          }
+        ],
+        "refinement_formula": "Selected entity locations use W[channel]+weight_offset and b[channel]+bias_offset; other locations use W,b.",
+        "refinement_buffers": {
+          "refinement_channels": {
+            "shape": [
+              2
+            ],
+            "trainable": false
+          },
+          "refinement_masks": {
+            "shape": [
+              2
+            ],
+            "trainable": false
+          },
+          "weight_offsets": {
+            "shape": [
+              2,
+              1390,
+              1,
+              1
+            ],
+            "trainable": false
+          },
+          "bias_offsets": {
+            "shape": [
+              2
+            ],
+            "trainable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "value_context",
+      "type": "layer",
+      "position": {
+        "x": 720,
+        "y": 2640
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Value context MLP: 578→128",
+        "params": {
+          "units": 128,
+          "input_features": 578,
+          "activation": "silu",
+          "bias": true
+        },
+        "description": "Learn a global context embedding, then apply SiLU.",
+        "output_shape": [
+          "B",
+          128
+        ],
+        "parameter_count": 74112,
+        "module_paths": [
+          "value_encoder.context.0"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.context.0.weight",
+            "shape": [
+              128,
+              578
+            ],
+            "elements": 73984
+          },
+          {
+            "name": "value_encoder.context.0.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_context_norm",
+      "type": "layer",
+      "position": {
+        "x": 1020,
+        "y": 2640
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Context LayerNorm: 128",
+        "params": {
+          "features": 128,
+          "axis": "channels",
+          "eps": 1e-05,
+          "affine": true
+        },
+        "description": "Normalize the 128 learned context components within each observation; this is not BatchNorm.",
+        "output_shape": [
+          "B",
+          128
+        ],
+        "parameter_count": 256,
+        "module_paths": [
+          "value_encoder.context.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.context.2.weight",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          },
+          {
+            "name": "value_encoder.context.2.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_condition",
+      "type": "layer",
+      "position": {
+        "x": 1320,
+        "y": 2640
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Context → 96 channel biases",
+        "params": {
+          "units": 96,
+          "input_features": 128,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Project the global context to 96 values and broadcast the same channel biases across all 45×49 locations.",
+        "output_shape": [
+          "B",
+          96
+        ],
+        "parameter_count": 12384,
+        "module_paths": [
+          "value_encoder.condition"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.condition.weight",
+            "shape": [
+              96,
+              128
+            ],
+            "elements": 12288
+          },
+          {
+            "name": "value_encoder.condition.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_conditioned",
+      "type": "layer",
+      "position": {
+        "x": 1620,
+        "y": 3000
+      },
+      "data": {
+        "kind": "add",
+        "label": "Add broadcast context to stem",
+        "params": {},
+        "description": "Elementwise addition of the stem map and broadcast context. This is context conditioning, not concatenation.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_block1_conv1",
+      "type": "layer",
+      "position": {
+        "x": 1920,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 1 · conv 1 · dilation 1",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 1,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 1. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.0.branch.0",
+          "value_encoder.blocks.0.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.0.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.0.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.0.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.0.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block1_conv2",
+      "type": "layer",
+      "position": {
+        "x": 2190,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 1 · conv 2 · dilation 1",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 1,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 1. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.0.branch.3",
+          "value_encoder.blocks.0.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.0.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.0.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.0.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.0.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block1_add",
+      "type": "layer",
+      "position": {
+        "x": 2460,
+        "y": 3000
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 1 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_block2_conv1",
+      "type": "layer",
+      "position": {
+        "x": 2730,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 2 · conv 1 · dilation 2",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 2,
+          "dilation": 2,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 2. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.1.branch.0",
+          "value_encoder.blocks.1.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.1.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.1.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.1.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.1.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block2_conv2",
+      "type": "layer",
+      "position": {
+        "x": 3000,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 2 · conv 2 · dilation 2",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 2,
+          "dilation": 2,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 2. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.1.branch.3",
+          "value_encoder.blocks.1.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.1.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.1.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.1.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.1.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block2_add",
+      "type": "layer",
+      "position": {
+        "x": 3270,
+        "y": 3000
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 2 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_block3_conv1",
+      "type": "layer",
+      "position": {
+        "x": 3540,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 3 · conv 1 · dilation 4",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 4,
+          "dilation": 4,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 4. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.2.branch.0",
+          "value_encoder.blocks.2.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.2.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.2.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.2.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.2.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block3_conv2",
+      "type": "layer",
+      "position": {
+        "x": 3810,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 3 · conv 2 · dilation 4",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 4,
+          "dilation": 4,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 4. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.2.branch.3",
+          "value_encoder.blocks.2.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.2.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.2.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.2.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.2.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block3_add",
+      "type": "layer",
+      "position": {
+        "x": 4080,
+        "y": 3000
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 3 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_block4_conv1",
+      "type": "layer",
+      "position": {
+        "x": 4350,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 4 · conv 1 · dilation 8",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 8,
+          "dilation": 8,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 8. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.3.branch.0",
+          "value_encoder.blocks.3.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.3.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.3.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.3.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.3.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block4_conv2",
+      "type": "layer",
+      "position": {
+        "x": 4620,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 4 · conv 2 · dilation 8",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 8,
+          "dilation": 8,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 8. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.3.branch.3",
+          "value_encoder.blocks.3.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.3.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.3.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.3.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.3.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block4_add",
+      "type": "layer",
+      "position": {
+        "x": 4890,
+        "y": 3000
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 4 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_block5_conv1",
+      "type": "layer",
+      "position": {
+        "x": 5160,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 5 · conv 1 · dilation 1",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 1,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 1. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.4.branch.0",
+          "value_encoder.blocks.4.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.4.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.4.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.4.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.4.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block5_conv2",
+      "type": "layer",
+      "position": {
+        "x": 5430,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 5 · conv 2 · dilation 1",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 1,
+          "dilation": 1,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 1. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.4.branch.3",
+          "value_encoder.blocks.4.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.4.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.4.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.4.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.4.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block5_add",
+      "type": "layer",
+      "position": {
+        "x": 5700,
+        "y": 3000
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 5 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_block6_conv1",
+      "type": "layer",
+      "position": {
+        "x": 5970,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 6 · conv 1 · dilation 2",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 2,
+          "dilation": 2,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 2. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.5.branch.0",
+          "value_encoder.blocks.5.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.5.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.5.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.5.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.5.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block6_conv2",
+      "type": "layer",
+      "position": {
+        "x": 6240,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 6 · conv 2 · dilation 2",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 2,
+          "dilation": 2,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 2. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.5.branch.3",
+          "value_encoder.blocks.5.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.5.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.5.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.5.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.5.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block6_add",
+      "type": "layer",
+      "position": {
+        "x": 6510,
+        "y": 3000
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 6 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_block7_conv1",
+      "type": "layer",
+      "position": {
+        "x": 6780,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 7 · conv 1 · dilation 4",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 4,
+          "dilation": 4,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 4. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.6.branch.0",
+          "value_encoder.blocks.6.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.6.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.6.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.6.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.6.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block7_conv2",
+      "type": "layer",
+      "position": {
+        "x": 7050,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 7 · conv 2 · dilation 4",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 4,
+          "dilation": 4,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 4. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.6.branch.3",
+          "value_encoder.blocks.6.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.6.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.6.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.6.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.6.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block7_add",
+      "type": "layer",
+      "position": {
+        "x": 7320,
+        "y": 3000
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 7 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_block8_conv1",
+      "type": "layer",
+      "position": {
+        "x": 7590,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 8 · conv 1 · dilation 8",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 8,
+          "dilation": 8,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 8. Stride 1 and matching padding retain the full 45×49 map. ",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.7.branch.0",
+          "value_encoder.blocks.7.branch.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.7.branch.0.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.7.branch.0.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.7.branch.2.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.7.branch.2.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block8_conv2",
+      "type": "layer",
+      "position": {
+        "x": 7860,
+        "y": 3000
+      },
+      "data": {
+        "kind": "conv2d",
+        "label": "Block 8 · conv 2 · dilation 8",
+        "params": {
+          "channels": 96,
+          "input_channels": 96,
+          "kernel": 3,
+          "stride": 1,
+          "padding": 8,
+          "dilation": 8,
+          "groups": 1,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Pre-normalize 96 channels at each location, apply SiLU, then a dense-channel 3×3 convolution with dilation 8. Stride 1 and matching padding retain the full 45×49 map. A configured Dropout2d(0.1) sits before this convolution, but dropout is disabled in current PPG learning and inference.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 83232,
+        "module_paths": [
+          "value_encoder.blocks.7.branch.3",
+          "value_encoder.blocks.7.branch.6"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.blocks.7.branch.3.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.7.branch.3.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.blocks.7.branch.6.weight",
+            "shape": [
+              96,
+              96,
+              3,
+              3
+            ],
+            "elements": 82944
+          },
+          {
+            "name": "value_encoder.blocks.7.branch.6.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ],
+        "pre_operations": [
+          {
+            "kind": "layernorm",
+            "features": 96,
+            "axis": "channels",
+            "affine": true
+          },
+          {
+            "kind": "activation",
+            "function": "silu"
+          },
+          {
+            "kind": "dropout2d",
+            "configured_probability": 0.1,
+            "effective_probability": 0
+          }
+        ],
+        "convolution_parameters": 83040,
+        "normalization_parameters": 192
+      }
+    },
+    {
+      "id": "value_block8_add",
+      "type": "layer",
+      "position": {
+        "x": 8130,
+        "y": 3000
+      },
+      "data": {
+        "kind": "add",
+        "label": "Block 8 · identity skip",
+        "params": {},
+        "description": "Add the unmodified block input to the two-convolution branch. Convolutional residual connections are present.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_final_norm",
+      "type": "layer",
+      "position": {
+        "x": 8400,
+        "y": 3000
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Final spatial LayerNorm",
+        "params": {
+          "features": 96,
+          "axis": "channels",
+          "eps": 1e-05,
+          "affine": true
+        },
+        "description": "Normalize the 96 channels at every canvas location after the eighth residual block.",
+        "output_shape": [
+          "B",
+          96,
+          45,
+          49
+        ],
+        "parameter_count": 192,
+        "module_paths": [
+          "value_encoder.final.norm"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.final.norm.weight",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          },
+          {
+            "name": "value_encoder.final.norm.bias",
+            "shape": [
+              96
+            ],
+            "elements": 96
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_mean",
+      "type": "layer",
+      "position": {
+        "x": 8700,
+        "y": 2870
+      },
+      "data": {
+        "kind": "globalavgpool2d",
+        "label": "Spatial mean: 96",
+        "params": {
+          "axes": [
+            "height",
+            "width"
+          ]
+        },
+        "description": "Take the mean over all 2,205 canvas locations independently for each channel. This reduces the global readout to 96 values. It does not downsample the spatial stream used by the local policy path.",
+        "output_shape": [
+          "B",
+          96
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_max",
+      "type": "layer",
+      "position": {
+        "x": 8700,
+        "y": 3160
+      },
+      "data": {
+        "kind": "globalmaxpool2d",
+        "label": "Spatial maximum: 96",
+        "params": {
+          "axes": [
+            "height",
+            "width"
+          ]
+        },
+        "description": "Take the max over all 2,205 canvas locations independently for each channel. This reduces the global readout to 96 values. It does not downsample the spatial stream used by the local policy path.",
+        "output_shape": [
+          "B",
+          96
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_global_join",
+      "type": "layer",
+      "position": {
+        "x": 9000,
+        "y": 3000
+      },
+      "data": {
+        "kind": "concat",
+        "label": "Mean + max + context: 320",
+        "params": {
+          "axis": "features"
+        },
+        "description": "Concatenate 96 spatial means, 96 spatial maxima and the 128-dimensional learned context.",
+        "output_shape": [
+          "B",
+          320
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_state",
+      "type": "layer",
+      "position": {
+        "x": 9300,
+        "y": 3000
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Global hidden: 320→256 + SiLU",
+        "params": {
+          "units": 256,
+          "input_features": 320,
+          "activation": "silu",
+          "bias": true
+        },
+        "description": "Learn a global board/context representation from the pooled spatial summaries.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 82176,
+        "module_paths": [
+          "value_encoder.state.0"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.state.0.weight",
+            "shape": [
+              256,
+              320
+            ],
+            "elements": 81920
+          },
+          {
+            "name": "value_encoder.state.0.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_state_norm",
+      "type": "layer",
+      "position": {
+        "x": 9600,
+        "y": 3000
+      },
+      "data": {
+        "kind": "layernorm",
+        "label": "Global LayerNorm: 256",
+        "params": {
+          "features": 256,
+          "axis": "channels",
+          "eps": 1e-05,
+          "affine": true
+        },
+        "description": "Normalize the global representation. A configured Dropout(0.1) follows; it is disabled in current PPG.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 512,
+        "module_paths": [
+          "value_encoder.state.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.state.2.weight",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          },
+          {
+            "name": "value_encoder.state.2.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_mlp1",
+      "type": "layer",
+      "position": {
+        "x": 9900,
+        "y": 3000
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Added MLP depth: 256→256 + SiLU",
+        "params": {
+          "units": 256,
+          "input_features": 256,
+          "activation": "silu",
+          "bias": true
+        },
+        "description": "First layer of the added serial MLP. Its module name is global_residual, but its output is not added to its input.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 65792,
+        "module_paths": [
+          "value_encoder.global_residual.0"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.global_residual.0.weight",
+            "shape": [
+              256,
+              256
+            ],
+            "elements": 65536
+          },
+          {
+            "name": "value_encoder.global_residual.0.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_mlp2",
+      "type": "layer",
+      "position": {
+        "x": 10200,
+        "y": 3000
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Added MLP output: 256→256",
+        "params": {
+          "units": 256,
+          "input_features": 256,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Second layer of the added serial MLP. This is a plain linear output; there is no residual bypass around the MLP.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 65792,
+        "module_paths": [
+          "value_encoder.global_residual.2"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.global_residual.2.weight",
+            "shape": [
+              256,
+              256
+            ],
+            "elements": 65536
+          },
+          {
+            "name": "value_encoder.global_residual.2.bias",
+            "shape": [
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_entity",
+      "type": "layer",
+      "position": {
+        "x": 8700,
+        "y": 3510
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Local entity projection: 96→32",
+        "params": {
+          "units": 32,
+          "input_features": 96,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Project each of the 2,205 location vectors to 32 components before gathering board entities.",
+        "output_shape": [
+          "B",
+          2205,
+          32
+        ],
+        "parameter_count": 3104,
+        "module_paths": [
+          "value_encoder.entity"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.entity.weight",
+            "shape": [
+              32,
+              96
+            ],
+            "elements": 3072
+          },
+          {
+            "name": "value_encoder.entity.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ],
+        "effective_use": "Stored but unused by independent-value outputs/losses"
+      }
+    },
+    {
+      "id": "value_ship",
+      "type": "layer",
+      "position": {
+        "x": 8700,
+        "y": 3810
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Ship attributes: 79→32",
+        "params": {
+          "units": 32,
+          "input_features": 79,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Project 60 cargo components, five ship-status fields, two ownership flags and a 12-way ship identity to 32 components.",
+        "output_shape": [
+          "B",
+          12,
+          32
+        ],
+        "parameter_count": 2560,
+        "module_paths": [
+          "value_encoder.ship"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_encoder.ship.weight",
+            "shape": [
+              32,
+              79
+            ],
+            "elements": 2528
+          },
+          {
+            "name": "value_encoder.ship.bias",
+            "shape": [
+              32
+            ],
+            "elements": 32
+          }
+        ],
+        "effective_use": "Stored but unused by independent-value outputs/losses"
+      }
+    },
+    {
+      "id": "value_entities",
+      "type": "layer",
+      "position": {
+        "x": 9000,
+        "y": 3510
+      },
+      "data": {
+        "kind": "gather",
+        "label": "Entity table: local position + attributes",
+        "params": {
+          "entity_width": 32
+        },
+        "description": "Gather fixed hex, edge and intersection positions; add projected ship attributes; construct village, lair and shoal descriptors plus a null entity. This returned table is discarded by the independent value head. Its 5,664 adapter parameters have no gradient path to current PPG losses.",
+        "output_shape": [
+          "B",
+          526,
+          32
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "current_role": "value"
+      }
+    },
+    {
+      "id": "payload_embedding",
+      "type": "layer",
+      "position": {
+        "x": 9440,
+        "y": 1870
+      },
+      "data": {
+        "kind": "embedding",
+        "label": "Payload embedding: 1,967×32",
+        "params": {
+          "vocabulary_size": 1967,
+          "dimensions": 32
+        },
+        "description": "Learn a 32-dimensional embedding for each canonical action payload. A fixed lookup maps each legal action ID to its payload ID.",
+        "output_shape": [
+          "B",
+          "L",
+          32
+        ],
+        "parameter_count": 62944,
+        "module_paths": [
+          "actor.policy.payloads"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.policy.payloads.weight",
+            "shape": [
+              1967,
+              32
+            ],
+            "elements": 62944
+          }
+        ]
+      }
+    },
+    {
+      "id": "family_embedding",
+      "type": "layer",
+      "position": {
+        "x": 9440,
+        "y": 2140
+      },
+      "data": {
+        "kind": "embedding",
+        "label": "Action-family embedding: 49×16",
+        "params": {
+          "vocabulary_size": 49,
+          "dimensions": 16
+        },
+        "description": "Learn a 16-dimensional descriptor for each action family.",
+        "output_shape": [
+          "B",
+          "L",
+          16
+        ],
+        "parameter_count": 784,
+        "module_paths": [
+          "actor.policy.families"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.policy.families.weight",
+            "shape": [
+              49,
+              16
+            ],
+            "elements": 784
+          }
+        ]
+      }
+    },
+    {
+      "id": "action_features",
+      "type": "layer",
+      "position": {
+        "x": 10040,
+        "y": 1250
+      },
+      "data": {
+        "kind": "concat",
+        "label": "Per-legal-action features: 264",
+        "params": {
+          "features": 264,
+          "axis": "features"
+        },
+        "description": "For each legal action concatenate: first entity 32, second entity 32, their elementwise product 32, payload embedding 32, action-family embedding 16 and two selected cargo descriptions totaling 120.",
+        "output_shape": [
+          "B",
+          "L",
+          264
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "action_projection1",
+      "type": "layer",
+      "position": {
+        "x": 10340,
+        "y": 1250
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Action MLP: 264→128 + SiLU",
+        "params": {
+          "units": 128,
+          "input_features": 264,
+          "activation": "silu",
+          "bias": true
+        },
+        "description": "Learn how the referenced entities, cargo and action metadata interact. Configured dropout is disabled.",
+        "output_shape": [
+          "B",
+          "L",
+          128
+        ],
+        "parameter_count": 33920,
+        "module_paths": [
+          "actor.policy.action_projection.0"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.policy.action_projection.0.weight",
+            "shape": [
+              128,
+              264
+            ],
+            "elements": 33792
+          },
+          {
+            "name": "actor.policy.action_projection.0.bias",
+            "shape": [
+              128
+            ],
+            "elements": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "action_projection2",
+      "type": "layer",
+      "position": {
+        "x": 10640,
+        "y": 1250
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Action representation: 128→64",
+        "params": {
+          "units": 64,
+          "input_features": 128,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Produce a 64-dimensional representation for each legal action.",
+        "output_shape": [
+          "B",
+          "L",
+          64
+        ],
+        "parameter_count": 8256,
+        "module_paths": [
+          "actor.policy.action_projection.3"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.policy.action_projection.3.weight",
+            "shape": [
+              64,
+              128
+            ],
+            "elements": 8192
+          },
+          {
+            "name": "actor.policy.action_projection.3.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          }
+        ]
+      }
+    },
+    {
+      "id": "policy_query",
+      "type": "layer",
+      "position": {
+        "x": 10640,
+        "y": 330
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Global policy query: 256→64",
+        "params": {
+          "units": 64,
+          "input_features": 256,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Transform the actor global MLP output into a query that scores action representations.",
+        "output_shape": [
+          "B",
+          64
+        ],
+        "parameter_count": 16448,
+        "module_paths": [
+          "actor.policy.query"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.policy.query.weight",
+            "shape": [
+              64,
+              256
+            ],
+            "elements": 16384
+          },
+          {
+            "name": "actor.policy.query.bias",
+            "shape": [
+              64
+            ],
+            "elements": 64
+          }
+        ]
+      }
+    },
+    {
+      "id": "family_logits",
+      "type": "layer",
+      "position": {
+        "x": 10640,
+        "y": 40
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Global family logits: 256→49",
+        "params": {
+          "units": 49,
+          "input_features": 256,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Predict preferences among 49 action families from the actor global representation.",
+        "output_shape": [
+          "B",
+          49
+        ],
+        "parameter_count": 12593,
+        "module_paths": [
+          "actor.policy.family"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.policy.family.weight",
+            "shape": [
+              49,
+              256
+            ],
+            "elements": 12544
+          },
+          {
+            "name": "actor.policy.family.bias",
+            "shape": [
+              49
+            ],
+            "elements": 49
+          }
+        ]
+      }
+    },
+    {
+      "id": "action_scores",
+      "type": "layer",
+      "position": {
+        "x": 10940,
+        "y": 770
+      },
+      "data": {
+        "kind": "dot",
+        "label": "Dot product + legal mask",
+        "params": {
+          "dimensions": 64,
+          "padded_action_logit": "negative infinity"
+        },
+        "description": "For each legal action sum the 64 products between its representation and the global query. Padded IDs receive −∞. This does not allocate an 82,819-wide dense classifier.",
+        "output_shape": [
+          "B",
+          "L"
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "policy",
+      "type": "layer",
+      "position": {
+        "x": 11240,
+        "y": 770
+      },
+      "data": {
+        "kind": "legal_policy",
+        "label": "Policy distribution over the L legal moves",
+        "params": {
+          "action_families": 49,
+          "action_vocabulary": 82819,
+          "legal_choices": "L",
+          "final_activation": "softmax"
+        },
+        "description": "Subtract the within-family log-sum-exp from each action score, add that family’s global logit, then softmax over the supplied legal actions. Collection samples this move distribution; normal raw evaluation chooses its maximum.",
+        "output_shape": [
+          "B",
+          "L"
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "family_normalization": "Only families represented in the legal list contribute probability."
+      }
+    },
+    {
+      "id": "actor_critic_features",
+      "type": "layer",
+      "position": {
+        "x": 10640,
+        "y": 1930
+      },
+      "data": {
+        "kind": "standardize",
+        "label": "Critic features: LayerNorm + saved scaling",
+        "params": {
+          "features": 256,
+          "affine_layernorm": false
+        },
+        "description": "Apply functional LayerNorm to the 256 hidden values, subtract the saved center and divide by the saved scale. These normalization buffers are not trainable. Configured critic dropout 0.5 is disabled in current PPG.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Auxiliary phase: teach outcome features to actor with a post-policy KL anchor. Frozen/not a policy-phase critic-gradient path."
+      }
+    },
+    {
+      "id": "actor_public",
+      "type": "layer",
+      "position": {
+        "x": 10640,
+        "y": 2480
+      },
+      "data": {
+        "kind": "feature_input",
+        "label": "Public value context: 18",
+        "params": {
+          "features": 18
+        },
+        "description": "Gather six seat-relative public counters and twelve mission-progress values from the raw observation; standardize with saved public center/scale buffers.",
+        "output_shape": [
+          "B",
+          18
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Auxiliary phase: teach outcome features to actor with a post-policy KL anchor. Frozen/not a policy-phase critic-gradient path."
+      }
+    },
+    {
+      "id": "actor_board_score",
+      "type": "layer",
+      "position": {
+        "x": 10940,
+        "y": 1820
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Board value score: 256→1",
+        "params": {
+          "units": 1,
+          "input_features": 256,
+          "activation": "none",
+          "bias": false
+        },
+        "description": "Linear board/context latent contribution to the signed outcome score; no bias.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 256,
+        "module_paths": [
+          "actor.critic.board"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.critic.board.weight",
+            "shape": [
+              1,
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_public_score",
+      "type": "layer",
+      "position": {
+        "x": 10940,
+        "y": 2080
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Public value score: 18→1",
+        "params": {
+          "units": 1,
+          "input_features": 18,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Small regularized linear public contribution, including a bias.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 19,
+        "module_paths": [
+          "actor.critic.public"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.critic.public.weight",
+            "shape": [
+              1,
+              18
+            ],
+            "elements": 18
+          },
+          {
+            "name": "actor.critic.public.bias",
+            "shape": [
+              1
+            ],
+            "elements": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_board_draw",
+      "type": "layer",
+      "position": {
+        "x": 10940,
+        "y": 2400
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Board draw score: 256→1",
+        "params": {
+          "units": 1,
+          "input_features": 256,
+          "activation": "none",
+          "bias": false
+        },
+        "description": "Separate learned contribution controlling terminal-draw probability; no bias.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 256,
+        "module_paths": [
+          "actor.critic.draw_board"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.critic.draw_board.weight",
+            "shape": [
+              1,
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_public_draw",
+      "type": "layer",
+      "position": {
+        "x": 10940,
+        "y": 2670
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Public draw score: 18→1",
+        "params": {
+          "units": 1,
+          "input_features": 18,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Separate learned public contribution controlling draw probability.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 19,
+        "module_paths": [
+          "actor.critic.draw_public"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "actor.critic.draw_public.weight",
+            "shape": [
+              1,
+              18
+            ],
+            "elements": 18
+          },
+          {
+            "name": "actor.critic.draw_public.bias",
+            "shape": [
+              1
+            ],
+            "elements": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "actor_signed_score",
+      "type": "layer",
+      "position": {
+        "x": 11240,
+        "y": 1930
+      },
+      "data": {
+        "kind": "add",
+        "label": "Signed score z = board + public",
+        "params": {},
+        "description": "The signed expected-outcome score before tanh.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_draw_score",
+      "type": "layer",
+      "position": {
+        "x": 11240,
+        "y": 2480
+      },
+      "data": {
+        "kind": "add",
+        "label": "Draw score d = board + public",
+        "params": {},
+        "description": "The draw logit before the outcome-distribution reparameterization.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "actor_outcome_logits",
+      "type": "layer",
+      "position": {
+        "x": 11540,
+        "y": 2230
+      },
+      "data": {
+        "kind": "outcome_transform",
+        "label": "Loss / draw / win logits",
+        "params": {
+          "z_clamp": [
+            -15,
+            15
+          ],
+          "d_clamp": [
+            -15,
+            15
+          ],
+          "tilt": "t = z + asinh(0.5 * exp(d) * sinh(z))",
+          "logits": [
+            "-t",
+            "d",
+            "t"
+          ]
+        },
+        "description": "Reparameterize the signed score and draw score into three terminal-outcome logits. The exact outcome support is −1, 0, +1; the early-win policy bonus is not added to critic labels.",
+        "output_shape": [
+          "B",
+          3
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Auxiliary phase: teach outcome features to actor with a post-policy KL anchor. Frozen/not a policy-phase critic-gradient path."
+      }
+    },
+    {
+      "id": "actor_outcomes",
+      "type": "layer",
+      "position": {
+        "x": 11840,
+        "y": 2230
+      },
+      "data": {
+        "kind": "classification",
+        "label": "P(loss), P(draw), P(win)",
+        "params": {
+          "units": 3,
+          "activation": "softmax",
+          "support": [
+            -1,
+            0,
+            1
+          ]
+        },
+        "description": "A categorical terminal-outcome distribution trained with negative log likelihood. This distribution predicts outcomes, not action probabilities.",
+        "output_shape": [
+          "B",
+          3
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Auxiliary phase: teach outcome features to actor with a post-policy KL anchor. Frozen/not a policy-phase critic-gradient path."
+      }
+    },
+    {
+      "id": "actor_mean_value",
+      "type": "layer",
+      "position": {
+        "x": 11540,
+        "y": 1800
+      },
+      "data": {
+        "kind": "activation",
+        "label": "Expected signed outcome: tanh(z)",
+        "params": {
+          "activation": "tanh",
+          "units": 1
+        },
+        "description": "The current inference path returns tanh(z). The categorical reparameterization preserves this expected outcome while separately representing draw probability. The actor-side mean is not the collection baseline; this readout is used by the auxiliary outcome-learning phase.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Auxiliary phase: teach outcome features to actor with a post-policy KL anchor. Frozen/not a policy-phase critic-gradient path."
+      }
+    },
+    {
+      "id": "value_critic_features",
+      "type": "layer",
+      "position": {
+        "x": 10640,
+        "y": 4270
+      },
+      "data": {
+        "kind": "standardize",
+        "label": "Critic features: LayerNorm + saved scaling",
+        "params": {
+          "features": 256,
+          "affine_layernorm": false
+        },
+        "description": "Apply functional LayerNorm to the 256 hidden values, subtract the saved center and divide by the saved scale. These normalization buffers are not trainable. Configured critic dropout 0.5 is disabled in current PPG.",
+        "output_shape": [
+          "B",
+          256
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Policy phase: independent critic encoder/head learn categorical outcomes without sending value gradients into the actor. Frozen during auxiliary learning."
+      }
+    },
+    {
+      "id": "value_public",
+      "type": "layer",
+      "position": {
+        "x": 10640,
+        "y": 4820
+      },
+      "data": {
+        "kind": "feature_input",
+        "label": "Public value context: 18",
+        "params": {
+          "features": 18
+        },
+        "description": "Gather six seat-relative public counters and twelve mission-progress values from the raw observation; standardize with saved public center/scale buffers.",
+        "output_shape": [
+          "B",
+          18
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Policy phase: independent critic encoder/head learn categorical outcomes without sending value gradients into the actor. Frozen during auxiliary learning."
+      }
+    },
+    {
+      "id": "value_board_score",
+      "type": "layer",
+      "position": {
+        "x": 10940,
+        "y": 4160
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Board value score: 256→1",
+        "params": {
+          "units": 1,
+          "input_features": 256,
+          "activation": "none",
+          "bias": false
+        },
+        "description": "Linear board/context latent contribution to the signed outcome score; no bias.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 256,
+        "module_paths": [
+          "value_head.board"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_head.board.weight",
+            "shape": [
+              1,
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_public_score",
+      "type": "layer",
+      "position": {
+        "x": 10940,
+        "y": 4420
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Public value score: 18→1",
+        "params": {
+          "units": 1,
+          "input_features": 18,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Small regularized linear public contribution, including a bias.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 19,
+        "module_paths": [
+          "value_head.public"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_head.public.weight",
+            "shape": [
+              1,
+              18
+            ],
+            "elements": 18
+          },
+          {
+            "name": "value_head.public.bias",
+            "shape": [
+              1
+            ],
+            "elements": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_board_draw",
+      "type": "layer",
+      "position": {
+        "x": 10940,
+        "y": 4740
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Board draw score: 256→1",
+        "params": {
+          "units": 1,
+          "input_features": 256,
+          "activation": "none",
+          "bias": false
+        },
+        "description": "Separate learned contribution controlling terminal-draw probability; no bias.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 256,
+        "module_paths": [
+          "value_head.draw_board"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_head.draw_board.weight",
+            "shape": [
+              1,
+              256
+            ],
+            "elements": 256
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_public_draw",
+      "type": "layer",
+      "position": {
+        "x": 10940,
+        "y": 5010
+      },
+      "data": {
+        "kind": "dense",
+        "label": "Public draw score: 18→1",
+        "params": {
+          "units": 1,
+          "input_features": 18,
+          "activation": "none",
+          "bias": true
+        },
+        "description": "Separate learned public contribution controlling draw probability.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 19,
+        "module_paths": [
+          "value_head.draw_public"
+        ],
+        "parameter_tensors": [
+          {
+            "name": "value_head.draw_public.weight",
+            "shape": [
+              1,
+              18
+            ],
+            "elements": 18
+          },
+          {
+            "name": "value_head.draw_public.bias",
+            "shape": [
+              1
+            ],
+            "elements": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "value_signed_score",
+      "type": "layer",
+      "position": {
+        "x": 11240,
+        "y": 4270
+      },
+      "data": {
+        "kind": "add",
+        "label": "Signed score z = board + public",
+        "params": {},
+        "description": "The signed expected-outcome score before tanh.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_draw_score",
+      "type": "layer",
+      "position": {
+        "x": 11240,
+        "y": 4820
+      },
+      "data": {
+        "kind": "add",
+        "label": "Draw score d = board + public",
+        "params": {},
+        "description": "The draw logit before the outcome-distribution reparameterization.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 0,
+        "module_paths": []
+      }
+    },
+    {
+      "id": "value_outcome_logits",
+      "type": "layer",
+      "position": {
+        "x": 11540,
+        "y": 4570
+      },
+      "data": {
+        "kind": "outcome_transform",
+        "label": "Loss / draw / win logits",
+        "params": {
+          "z_clamp": [
+            -15,
+            15
+          ],
+          "d_clamp": [
+            -15,
+            15
+          ],
+          "tilt": "t = z + asinh(0.5 * exp(d) * sinh(z))",
+          "logits": [
+            "-t",
+            "d",
+            "t"
+          ]
+        },
+        "description": "Reparameterize the signed score and draw score into three terminal-outcome logits. The exact outcome support is −1, 0, +1; the early-win policy bonus is not added to critic labels.",
+        "output_shape": [
+          "B",
+          3
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Policy phase: independent critic encoder/head learn categorical outcomes without sending value gradients into the actor. Frozen during auxiliary learning."
+      }
+    },
+    {
+      "id": "value_outcomes",
+      "type": "layer",
+      "position": {
+        "x": 11840,
+        "y": 4570
+      },
+      "data": {
+        "kind": "classification",
+        "label": "P(loss), P(draw), P(win)",
+        "params": {
+          "units": 3,
+          "activation": "softmax",
+          "support": [
+            -1,
+            0,
+            1
+          ]
+        },
+        "description": "A categorical terminal-outcome distribution trained with negative log likelihood. This distribution predicts outcomes, not action probabilities.",
+        "output_shape": [
+          "B",
+          3
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Policy phase: independent critic encoder/head learn categorical outcomes without sending value gradients into the actor. Frozen during auxiliary learning."
+      }
+    },
+    {
+      "id": "value_mean_value",
+      "type": "layer",
+      "position": {
+        "x": 11540,
+        "y": 4140
+      },
+      "data": {
+        "kind": "activation",
+        "label": "Expected signed outcome: tanh(z)",
+        "params": {
+          "activation": "tanh",
+          "units": 1
+        },
+        "description": "The current inference path returns tanh(z). The categorical reparameterization preserves this expected outcome while separately representing draw probability. This independent value supplies the on-policy advantage baseline.",
+        "output_shape": [
+          "B",
+          1
+        ],
+        "parameter_count": 0,
+        "module_paths": [],
+        "usage": "Policy phase: independent critic encoder/head learn categorical outcomes without sending value gradients into the actor. Frozen during auxiliary learning."
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "observation-board",
+      "source": "observation",
+      "target": "board",
+      "label": "Fixed board-plane encoding",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-context",
+      "source": "observation",
+      "target": "context",
+      "label": "Fixed context extraction",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "board-actor_stem",
+      "source": "board",
+      "target": "actor_stem",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "context-actor_context",
+      "source": "context",
+      "target": "actor_context",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_context-actor_context_norm",
+      "source": "actor_context",
+      "target": "actor_context_norm",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_context_norm-actor_condition",
+      "source": "actor_context_norm",
+      "target": "actor_condition",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_stem-actor_conditioned",
+      "source": "actor_stem",
+      "target": "actor_conditioned",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_condition-actor_conditioned",
+      "source": "actor_condition",
+      "target": "actor_conditioned",
+      "label": "Broadcast over H,W",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_conditioned-actor_block1_conv1",
+      "source": "actor_conditioned",
+      "target": "actor_block1_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block1_conv1-actor_block1_conv2",
+      "source": "actor_block1_conv1",
+      "target": "actor_block1_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block1_conv2-actor_block1_add",
+      "source": "actor_block1_conv2",
+      "target": "actor_block1_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_conditioned-actor_block1_add",
+      "source": "actor_conditioned",
+      "target": "actor_block1_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "actor_block1_add-actor_block2_conv1",
+      "source": "actor_block1_add",
+      "target": "actor_block2_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block2_conv1-actor_block2_conv2",
+      "source": "actor_block2_conv1",
+      "target": "actor_block2_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block2_conv2-actor_block2_add",
+      "source": "actor_block2_conv2",
+      "target": "actor_block2_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block1_add-actor_block2_add",
+      "source": "actor_block1_add",
+      "target": "actor_block2_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "actor_block2_add-actor_block3_conv1",
+      "source": "actor_block2_add",
+      "target": "actor_block3_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block3_conv1-actor_block3_conv2",
+      "source": "actor_block3_conv1",
+      "target": "actor_block3_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block3_conv2-actor_block3_add",
+      "source": "actor_block3_conv2",
+      "target": "actor_block3_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block2_add-actor_block3_add",
+      "source": "actor_block2_add",
+      "target": "actor_block3_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "actor_block3_add-actor_block4_conv1",
+      "source": "actor_block3_add",
+      "target": "actor_block4_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block4_conv1-actor_block4_conv2",
+      "source": "actor_block4_conv1",
+      "target": "actor_block4_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block4_conv2-actor_block4_add",
+      "source": "actor_block4_conv2",
+      "target": "actor_block4_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block3_add-actor_block4_add",
+      "source": "actor_block3_add",
+      "target": "actor_block4_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "actor_block4_add-actor_block5_conv1",
+      "source": "actor_block4_add",
+      "target": "actor_block5_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block5_conv1-actor_block5_conv2",
+      "source": "actor_block5_conv1",
+      "target": "actor_block5_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block5_conv2-actor_block5_add",
+      "source": "actor_block5_conv2",
+      "target": "actor_block5_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block4_add-actor_block5_add",
+      "source": "actor_block4_add",
+      "target": "actor_block5_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "actor_block5_add-actor_block6_conv1",
+      "source": "actor_block5_add",
+      "target": "actor_block6_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block6_conv1-actor_block6_conv2",
+      "source": "actor_block6_conv1",
+      "target": "actor_block6_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block6_conv2-actor_block6_add",
+      "source": "actor_block6_conv2",
+      "target": "actor_block6_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block5_add-actor_block6_add",
+      "source": "actor_block5_add",
+      "target": "actor_block6_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "actor_block6_add-actor_block7_conv1",
+      "source": "actor_block6_add",
+      "target": "actor_block7_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block7_conv1-actor_block7_conv2",
+      "source": "actor_block7_conv1",
+      "target": "actor_block7_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block7_conv2-actor_block7_add",
+      "source": "actor_block7_conv2",
+      "target": "actor_block7_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block6_add-actor_block7_add",
+      "source": "actor_block6_add",
+      "target": "actor_block7_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "actor_block7_add-actor_block8_conv1",
+      "source": "actor_block7_add",
+      "target": "actor_block8_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block8_conv1-actor_block8_conv2",
+      "source": "actor_block8_conv1",
+      "target": "actor_block8_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block8_conv2-actor_block8_add",
+      "source": "actor_block8_conv2",
+      "target": "actor_block8_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_block7_add-actor_block8_add",
+      "source": "actor_block7_add",
+      "target": "actor_block8_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "actor_block8_add-actor_final_norm",
+      "source": "actor_block8_add",
+      "target": "actor_final_norm",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_final_norm-actor_mean",
+      "source": "actor_final_norm",
+      "target": "actor_mean",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_final_norm-actor_max",
+      "source": "actor_final_norm",
+      "target": "actor_max",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_mean-actor_global_join",
+      "source": "actor_mean",
+      "target": "actor_global_join",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_max-actor_global_join",
+      "source": "actor_max",
+      "target": "actor_global_join",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_context_norm-actor_global_join",
+      "source": "actor_context_norm",
+      "target": "actor_global_join",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_global_join-actor_state",
+      "source": "actor_global_join",
+      "target": "actor_state",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_state-actor_state_norm",
+      "source": "actor_state",
+      "target": "actor_state_norm",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_state_norm-actor_mlp1",
+      "source": "actor_state_norm",
+      "target": "actor_mlp1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_mlp1-actor_mlp2",
+      "source": "actor_mlp1",
+      "target": "actor_mlp2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_final_norm-actor_entity",
+      "source": "actor_final_norm",
+      "target": "actor_entity",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-actor_ship",
+      "source": "observation",
+      "target": "actor_ship",
+      "label": "Fixed ship/cargo feature extraction",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_entity-actor_entities",
+      "source": "actor_entity",
+      "target": "actor_entities",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_ship-actor_entities",
+      "source": "actor_ship",
+      "target": "actor_entities",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-actor_entities",
+      "source": "observation",
+      "target": "actor_entities",
+      "label": "Fixed geometry and entity/cargo lookup",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "board-value_stem",
+      "source": "board",
+      "target": "value_stem",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "context-value_context",
+      "source": "context",
+      "target": "value_context",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_context-value_context_norm",
+      "source": "value_context",
+      "target": "value_context_norm",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_context_norm-value_condition",
+      "source": "value_context_norm",
+      "target": "value_condition",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_stem-value_conditioned",
+      "source": "value_stem",
+      "target": "value_conditioned",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_condition-value_conditioned",
+      "source": "value_condition",
+      "target": "value_conditioned",
+      "label": "Broadcast over H,W",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_conditioned-value_block1_conv1",
+      "source": "value_conditioned",
+      "target": "value_block1_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block1_conv1-value_block1_conv2",
+      "source": "value_block1_conv1",
+      "target": "value_block1_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block1_conv2-value_block1_add",
+      "source": "value_block1_conv2",
+      "target": "value_block1_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_conditioned-value_block1_add",
+      "source": "value_conditioned",
+      "target": "value_block1_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "value_block1_add-value_block2_conv1",
+      "source": "value_block1_add",
+      "target": "value_block2_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block2_conv1-value_block2_conv2",
+      "source": "value_block2_conv1",
+      "target": "value_block2_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block2_conv2-value_block2_add",
+      "source": "value_block2_conv2",
+      "target": "value_block2_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block1_add-value_block2_add",
+      "source": "value_block1_add",
+      "target": "value_block2_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "value_block2_add-value_block3_conv1",
+      "source": "value_block2_add",
+      "target": "value_block3_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block3_conv1-value_block3_conv2",
+      "source": "value_block3_conv1",
+      "target": "value_block3_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block3_conv2-value_block3_add",
+      "source": "value_block3_conv2",
+      "target": "value_block3_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block2_add-value_block3_add",
+      "source": "value_block2_add",
+      "target": "value_block3_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "value_block3_add-value_block4_conv1",
+      "source": "value_block3_add",
+      "target": "value_block4_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block4_conv1-value_block4_conv2",
+      "source": "value_block4_conv1",
+      "target": "value_block4_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block4_conv2-value_block4_add",
+      "source": "value_block4_conv2",
+      "target": "value_block4_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block3_add-value_block4_add",
+      "source": "value_block3_add",
+      "target": "value_block4_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "value_block4_add-value_block5_conv1",
+      "source": "value_block4_add",
+      "target": "value_block5_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block5_conv1-value_block5_conv2",
+      "source": "value_block5_conv1",
+      "target": "value_block5_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block5_conv2-value_block5_add",
+      "source": "value_block5_conv2",
+      "target": "value_block5_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block4_add-value_block5_add",
+      "source": "value_block4_add",
+      "target": "value_block5_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "value_block5_add-value_block6_conv1",
+      "source": "value_block5_add",
+      "target": "value_block6_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block6_conv1-value_block6_conv2",
+      "source": "value_block6_conv1",
+      "target": "value_block6_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block6_conv2-value_block6_add",
+      "source": "value_block6_conv2",
+      "target": "value_block6_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block5_add-value_block6_add",
+      "source": "value_block5_add",
+      "target": "value_block6_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "value_block6_add-value_block7_conv1",
+      "source": "value_block6_add",
+      "target": "value_block7_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block7_conv1-value_block7_conv2",
+      "source": "value_block7_conv1",
+      "target": "value_block7_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block7_conv2-value_block7_add",
+      "source": "value_block7_conv2",
+      "target": "value_block7_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block6_add-value_block7_add",
+      "source": "value_block6_add",
+      "target": "value_block7_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "value_block7_add-value_block8_conv1",
+      "source": "value_block7_add",
+      "target": "value_block8_conv1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block8_conv1-value_block8_conv2",
+      "source": "value_block8_conv1",
+      "target": "value_block8_conv2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block8_conv2-value_block8_add",
+      "source": "value_block8_conv2",
+      "target": "value_block8_add",
+      "label": "Learned residual branch",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_block7_add-value_block8_add",
+      "source": "value_block7_add",
+      "target": "value_block8_add",
+      "label": "Identity bypass",
+      "data": {
+        "role": "identity_skip"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "value_block8_add-value_final_norm",
+      "source": "value_block8_add",
+      "target": "value_final_norm",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_final_norm-value_mean",
+      "source": "value_final_norm",
+      "target": "value_mean",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_final_norm-value_max",
+      "source": "value_final_norm",
+      "target": "value_max",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_mean-value_global_join",
+      "source": "value_mean",
+      "target": "value_global_join",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_max-value_global_join",
+      "source": "value_max",
+      "target": "value_global_join",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_context_norm-value_global_join",
+      "source": "value_context_norm",
+      "target": "value_global_join",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_global_join-value_state",
+      "source": "value_global_join",
+      "target": "value_state",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_state-value_state_norm",
+      "source": "value_state",
+      "target": "value_state_norm",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_state_norm-value_mlp1",
+      "source": "value_state_norm",
+      "target": "value_mlp1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_mlp1-value_mlp2",
+      "source": "value_mlp1",
+      "target": "value_mlp2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_final_norm-value_entity",
+      "source": "value_final_norm",
+      "target": "value_entity",
+      "data": {
+        "role": "unused"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "observation-value_ship",
+      "source": "observation",
+      "target": "value_ship",
+      "label": "Fixed ship/cargo feature extraction",
+      "data": {
+        "role": "unused"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "value_entity-value_entities",
+      "source": "value_entity",
+      "target": "value_entities",
+      "data": {
+        "role": "unused"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "value_ship-value_entities",
+      "source": "value_ship",
+      "target": "value_entities",
+      "data": {
+        "role": "unused"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "observation-value_entities",
+      "source": "observation",
+      "target": "value_entities",
+      "label": "Fixed geometry and entity/cargo lookup",
+      "data": {
+        "role": "unused"
+      },
+      "style": {
+        "strokeDasharray": "7 5"
+      }
+    },
+    {
+      "id": "legal-payload_embedding",
+      "source": "legal",
+      "target": "payload_embedding",
+      "label": "Fixed payload-ID lookup",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "legal-family_embedding",
+      "source": "legal",
+      "target": "family_embedding",
+      "label": "Fixed family-ID lookup",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_entities-action_features",
+      "source": "actor_entities",
+      "target": "action_features",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "payload_embedding-action_features",
+      "source": "payload_embedding",
+      "target": "action_features",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "family_embedding-action_features",
+      "source": "family_embedding",
+      "target": "action_features",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "legal-action_features",
+      "source": "legal",
+      "target": "action_features",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-action_features",
+      "source": "observation",
+      "target": "action_features",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "action_features-action_projection1",
+      "source": "action_features",
+      "target": "action_projection1",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "action_projection1-action_projection2",
+      "source": "action_projection1",
+      "target": "action_projection2",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_mlp2-policy_query",
+      "source": "actor_mlp2",
+      "target": "policy_query",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_mlp2-family_logits",
+      "source": "actor_mlp2",
+      "target": "family_logits",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "policy_query-action_scores",
+      "source": "policy_query",
+      "target": "action_scores",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "action_projection2-action_scores",
+      "source": "action_projection2",
+      "target": "action_scores",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "legal-action_scores",
+      "source": "legal",
+      "target": "action_scores",
+      "label": "Mask padded IDs",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "action_scores-policy",
+      "source": "action_scores",
+      "target": "policy",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "family_logits-policy",
+      "source": "family_logits",
+      "target": "policy",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "legal-policy",
+      "source": "legal",
+      "target": "policy",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_mlp2-actor_critic_features",
+      "source": "actor_mlp2",
+      "target": "actor_critic_features",
+      "label": "Auxiliary phase: teach outcome features to actor with a post-policy KL anchor. Frozen/not a policy-phase critic-gradient path.",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-actor_public",
+      "source": "observation",
+      "target": "actor_public",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_critic_features-actor_board_score",
+      "source": "actor_critic_features",
+      "target": "actor_board_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_critic_features-actor_board_draw",
+      "source": "actor_critic_features",
+      "target": "actor_board_draw",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_public-actor_public_score",
+      "source": "actor_public",
+      "target": "actor_public_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_public-actor_public_draw",
+      "source": "actor_public",
+      "target": "actor_public_draw",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_board_score-actor_signed_score",
+      "source": "actor_board_score",
+      "target": "actor_signed_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_public_score-actor_signed_score",
+      "source": "actor_public_score",
+      "target": "actor_signed_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_board_draw-actor_draw_score",
+      "source": "actor_board_draw",
+      "target": "actor_draw_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_public_draw-actor_draw_score",
+      "source": "actor_public_draw",
+      "target": "actor_draw_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_signed_score-actor_outcome_logits",
+      "source": "actor_signed_score",
+      "target": "actor_outcome_logits",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_draw_score-actor_outcome_logits",
+      "source": "actor_draw_score",
+      "target": "actor_outcome_logits",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_outcome_logits-actor_outcomes",
+      "source": "actor_outcome_logits",
+      "target": "actor_outcomes",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "actor_signed_score-actor_mean_value",
+      "source": "actor_signed_score",
+      "target": "actor_mean_value",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_mlp2-value_critic_features",
+      "source": "value_mlp2",
+      "target": "value_critic_features",
+      "label": "Policy phase: independent critic encoder/head learn categorical outcomes without sending value gradients into the actor. Frozen during auxiliary learning.",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "observation-value_public",
+      "source": "observation",
+      "target": "value_public",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_critic_features-value_board_score",
+      "source": "value_critic_features",
+      "target": "value_board_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_critic_features-value_board_draw",
+      "source": "value_critic_features",
+      "target": "value_board_draw",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_public-value_public_score",
+      "source": "value_public",
+      "target": "value_public_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_public-value_public_draw",
+      "source": "value_public",
+      "target": "value_public_draw",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_board_score-value_signed_score",
+      "source": "value_board_score",
+      "target": "value_signed_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_public_score-value_signed_score",
+      "source": "value_public_score",
+      "target": "value_signed_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_board_draw-value_draw_score",
+      "source": "value_board_draw",
+      "target": "value_draw_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_public_draw-value_draw_score",
+      "source": "value_public_draw",
+      "target": "value_draw_score",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_signed_score-value_outcome_logits",
+      "source": "value_signed_score",
+      "target": "value_outcome_logits",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_draw_score-value_outcome_logits",
+      "source": "value_draw_score",
+      "target": "value_outcome_logits",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_outcome_logits-value_outcomes",
+      "source": "value_outcome_logits",
+      "target": "value_outcomes",
+      "data": {
+        "role": "data"
+      }
+    },
+    {
+      "id": "value_signed_score-value_mean_value",
+      "source": "value_signed_score",
+      "target": "value_mean_value",
+      "data": {
+        "role": "data"
+      }
+    }
+  ],
+  "metadata": {
+    "description": "Detailed descriptive schematic of an exact latest.pt snapshot. Nodes own disjoint parameter sets; counts sum to the complete checkpoint model.",
+    "checkpoint": {
+      "sha256": "77566a1297cf0d7954a5de68f86f2079d0dd7e88676e25ae9c1e5d227df59e83",
+      "bytes": 51393088,
+      "captured_at_utc": "2026-10-25T18:03:34.149561+00:00",
+      "captured_at_local": "2026-10-25T12:03:34.149561-06:00",
+      "cumulative_decisions": 83569740,
+      "generation": 92,
+      "stage": "learning",
+      "frozen_weights_after_generation": null,
+      "optimizer_steps": 760500,
+      "phase_steps": {
+        "policy": 200778,
+        "auxiliary": 559722
+      }
+    },
+    "architecture": "hex-cnn-mlp-readout-ppg-v1",
+    "algorithm": "Distributional PPG",
+    "parameter_counts": {
+      "total": 3680301,
+      "actor_encoder": 1772128,
+      "actor_legal_policy": 134945,
+      "actor_auxiliary_outcome_head": 550,
+      "independent_value_encoder": 1772128,
+      "independent_outcome_head": 550,
+      "stored_unused_value_adapters": 5664,
+      "remaining_parameters": 3674637
+    },
+    "input_dimensions": {
+      "raw_observation": 13708,
+      "board": [
+        1390,
+        45,
+        49
+      ],
+      "context": 578,
+      "public_value_context": 18,
+      "legal_actions": "L ordered IDs",
+      "action_vocabulary": 82819,
+      "action_families": 49
+    },
+    "receptive_field": {
+      "per_final_spatial_location_nominal": [
+        121,
+        121
+      ],
+      "formula": "1 + 4 * sum([1,2,4,8,1,2,4,8])",
+      "measured_effective_receptive_field": false,
+      "global_readout": "Spatial mean and maximum cover the full canvas; local action descriptors gather explicit entity positions."
+    },
+    "important_details": [
+      "Actor and independent value network have separate learned CNN encoders and separate context MLP weights. They do not share a single convolutional residual stream.",
+      "Each encoder has a 1×1 stem and 16 dense-channel 3×3 convolutions arranged in 8 residual blocks. Every spatial map remains 45×49×96.",
+      "Convolutional identity skips are present. The added 256→256→256 MLP retains its depth and has no residual bypass.",
+      "There is no intermediate spatial downsampling or spatial max-pooling layer in the convolution stack. Global mean and global maximum pooling ARE present in the actual global readout.",
+      "The action head scores only supplied legal actions, with global family weighting; it is not a dense 82,819-way classifier.",
+      "The action policy and the three-class outcome distributions are different outputs.",
+      "Early-win bonus affects policy returns; critic labels remain −1/0/+1. Timeouts are terminal draws.",
+      "Configured dropout 0.1/0.5 remains in modules but is disabled during current PPG learning and inference.",
+      "Foundation fields critic_objective=terminal-mse and critic_encoder_gradients=True do not replace PPG’s actual categorical NLL and phase-specific gradient isolation.",
+      "Fixed feature-refinement offsets are buffers. The selected original stem weights remain trainable; initial clean-detector meanings are not proof of present monosemanticity.",
+      "The independent encoder’s entity/ship adapters are stored but disconnected from value outputs and current losses. Their 5,664 parameters are included in the total. This is a module-level connectivity statement; individual embedding-row usage was not audited."
+    ],
+    "precision": {
+      "stored_parameters": "float32",
+      "live_cuda_inference": "Compiled BF16 autocast; selected reductions/output probabilities use FP32.",
+      "cpu_shape_verification": "FP32, eager, one actual ordinary game observation; no GPU or training interruption."
+    },
+    "training": {
+      "actor_lr": 1e-05,
+      "contextual_readout_lr": 1e-06,
+      "value_loss_weight": 0.05,
+      "ppo_clip": 0.2,
+      "target_kl": 0.01,
+      "policy_passes": 1,
+      "auxiliary_passes": 1,
+      "gradients": "Policy phase: actor policy loss and separate critic outcome loss. Auxiliary phase: actor outcome loss plus KL to immutable post-policy policy.",
+      "phase_order": [
+        "512 frozen ordinary self-play attempts",
+        "policy phase",
+        "auxiliary phase",
+        "raw evaluation"
+      ],
+      "max_decisions": 3000,
+      "timeout_return": 0
+    },
+    "validation": {
+      "json_version": 1,
+      "nodes": 115,
+      "edges": 153,
+      "acyclic": true,
+      "every_parameter_owned_once": true,
+      "exact_parameter_total": true,
+      "actual_cpu_observation_shapes": {
+        "board": [
+          1,
+          1390,
+          45,
+          49
+        ],
+        "context": [
+          1,
+          578
+        ],
+        "actor_hidden": [
+          1,
+          256
+        ],
+        "value_hidden": [
+          1,
+          256
+        ],
+        "entities": [
+          1,
+          526,
+          32
+        ],
+        "legal": [
+          1,
+          14
+        ],
+        "policy_logits": [
+          1,
+          14
+        ],
+        "actor_outcomes": [
+          1,
+          3
+        ],
+        "value_outcomes": [
+          1,
+          3
+        ],
+        "expected_value": [
+          1,
+          1
+        ]
+      },
+      "legal_policy_and_outcomes_normalized": true,
+      "unused_adapter_gradients_none": true,
+      "bespoke_application_import_tested": false
+    },
+    "format_notes": "Version/name/nodes/edges follow the supplied example. Each node adds descriptions, shapes, parameter ownership and observed shape evidence. Additional operation kinds name exact operations absent from that small example; this is a schematic, not an executable model format.",
+    "node_kinds": [
+      "activation",
+      "add",
+      "classification",
+      "concat",
+      "conv2d",
+      "dense",
+      "dot",
+      "embedding",
+      "feature_input",
+      "gather",
+      "globalavgpool2d",
+      "globalmaxpool2d",
+      "grid_input",
+      "layernorm",
+      "legal_policy",
+      "outcome_transform",
+      "standardize"
+    ]
+  },
+  "template": "catan_original",
+  "mode": "schematic"
+}
