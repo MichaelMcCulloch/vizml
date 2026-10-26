@@ -322,6 +322,61 @@ export default function Architecture({
     const halfDepth = new Map<string, number>();
     const meshes: THREE.Object3D[] = [];
 
+    // Information density and bottleneck throughput. A node's density is the
+    // log2 of its tensor size; its throughput is the widest path that can reach
+    // it from a source and still reach the sea (an output).
+    const information = new Map<string, number>();
+    for (const id of validNodes) {
+      const elements = Math.max(1, analysis.nodes[id].elements || 0);
+      information.set(id, Math.log2(elements + 1));
+    }
+    const upstream = new Map<string, number>();
+    for (const id of validNodes) {
+      const own = information.get(id) ?? 1;
+      const parents = graph.edges
+        .filter(
+          (edge) =>
+            edge.target === id &&
+            byId.has(edge.source) &&
+            upstream.has(edge.source),
+        )
+        .map((edge) => upstream.get(edge.source)!);
+      upstream.set(
+        id,
+        parents.length ? Math.max(...parents.map((value) => Math.min(value, own))) : own,
+      );
+    }
+    const downstream = new Map<string, number>();
+    for (const id of [...validNodes].reverse()) {
+      const own = information.get(id) ?? 1;
+      const children = graph.edges
+        .filter(
+          (edge) =>
+            edge.source === id &&
+            byId.has(edge.target) &&
+            downstream.has(edge.target),
+        )
+        .map((edge) => downstream.get(edge.target)!);
+      downstream.set(
+        id,
+        children.length
+          ? Math.max(...children.map((value) => Math.min(value, own)))
+          : own,
+      );
+    }
+    const throughput = new Map<string, number>();
+    let maxThroughput = 1;
+    for (const id of validNodes) {
+      const value = Math.min(
+        upstream.get(id) ?? 0,
+        downstream.get(id) ?? 0,
+      );
+      throughput.set(id, value);
+      maxThroughput = Math.max(maxThroughput, value);
+    }
+    const flow = (id: string) =>
+      (throughput.get(id) ?? 0) / maxThroughput;
+
     // Dominant-flow hierarchy. Each node keeps one parent as its current; the
     // other parent edges become deltas across the model. The largest child
     // continues a flow, substantial forks open a new vertical tier, and small
@@ -374,6 +429,7 @@ export default function Architecture({
           id: edge.source,
           skip: isSkipEdge(edge),
           family: layoutFamily(edge.source),
+          flow: flow(edge.source),
           height: flowHeight.get(edge.source) ?? 0,
           depth: depths.get(edge.source) ?? 0,
         }));
@@ -382,6 +438,7 @@ export default function Architecture({
         (a, b) =>
           Number(a.family !== family) - Number(b.family !== family) ||
           Number(a.skip) - Number(b.skip) ||
+          b.flow - a.flow ||
           b.height - a.height ||
           b.depth - a.depth ||
           a.id.localeCompare(b.id),
@@ -423,7 +480,13 @@ export default function Architecture({
         a.localeCompare(b),
     );
 
-    type FlowLane = { id: number; level: number; size: number; z: number };
+    type FlowLane = {
+      id: number;
+      level: number;
+      size: number;
+      flow: number;
+      z: number;
+    };
     const lanes: FlowLane[] = [];
     const laneOfNode = new Map<string, number>();
     const lateralOfNode = new Map<string, number>();
@@ -435,6 +498,7 @@ export default function Architecture({
       lateral: number,
     ): void => {
       lanes[lane].size += 1;
+      lanes[lane].flow += flow(node);
       laneOfNode.set(node, lane);
       lateralOfNode.set(node, lateral);
       const family = layoutFamily(node);
@@ -478,6 +542,7 @@ export default function Architecture({
             id: next,
             level: lanes[lane].level + 1,
             size: 0,
+            flow: 0,
             z: 0,
           });
           if (forkHeader && !inheritor && sameFamilyMajor.includes(child)) {
@@ -496,7 +561,7 @@ export default function Architecture({
     };
     const createFlowLane = (root: string, level: number) => {
       const next = lanes.length;
-      lanes.push({ id: next, level, size: 0, z: 0 });
+      lanes.push({ id: next, level, size: 0, flow: 0, z: 0 });
       walkFlow(root, next, 0);
     };
     flowRoots.forEach((root, index) => {
@@ -523,6 +588,7 @@ export default function Architecture({
       list.sort(
         (a, b) =>
           (a.id === 0 ? -1 : b.id === 0 ? 1 : 0) ||
+          b.flow - a.flow ||
           b.size - a.size ||
           a.id - b.id,
       );
@@ -643,17 +709,175 @@ export default function Architecture({
         parked += 1;
       }
     }
-    let maxLevel = 0;
-    let maxAbsZ = 0;
-    for (const lane of lanes) maxLevel = Math.max(maxLevel, lane.level);
-    for (const id of validNodes) {
-      const point = parkedAt.get(id) ?? pointFor(id);
-      maxAbsZ = Math.max(maxAbsZ, Math.abs(point.z));
+    // Least-action relaxation. X stays on the flow axis; Y/Z settle under
+    // information-weighted edge springs, channel cohesion, and clearance
+    // repulsion. Sources and the sea stay near their headwater/mouth positions.
+    const positions = new Map<string, THREE.Vector3>();
+    const initial = new Map<string, THREE.Vector3>();
+    const channelOf = new Map<string, string>();
+    const hasIncoming = new Set<string>();
+    const hasOutgoing = new Set<string>();
+    for (const edge of graph.edges) {
+      if (byId.has(edge.source) && byId.has(edge.target)) {
+        hasOutgoing.add(edge.source);
+        hasIncoming.add(edge.target);
+      }
     }
-    const frameMinX = -4;
-    const frameMaxX = maxX + 4;
-    const frameMinY = 0.3 - maxLevel * flowLevelSpacing - 4.2;
-    const frameMaxY = 0.3 + 4.8;
+    for (const id of validNodes) {
+      const point = (parkedAt.get(id) ?? pointFor(id)).clone();
+      positions.set(id, point.clone());
+      initial.set(id, point.clone());
+      channelOf.set(
+        id,
+        parkedAt.has(id) || displayLevel.has(id)
+          ? `anchor:${id}`
+          : `${laneOfNode.get(id)}:${Math.round((lateralOfNode.get(id) ?? 0) * 10)}`,
+      );
+    }
+    const maxAbsZBefore = Math.max(
+      1,
+      ...[...positions.values()].map((point) => Math.abs(point.z)),
+    );
+    let maxLevelBefore = 0;
+    for (const lane of lanes) maxLevelBefore = Math.max(maxLevelBefore, lane.level);
+    const velocity = new Map<string, THREE.Vector2>();
+    const iterations =
+      validNodes.length > 180 ? 70 : validNodes.length > 100 ? 110 : 170;
+    for (let iteration = 0; iteration < iterations; iteration++) {
+      const forces = new Map<string, THREE.Vector2>();
+      for (const id of validNodes) forces.set(id, new THREE.Vector2());
+      const forceFor = (id: string) => forces.get(id)!;
+
+      // High-information connections pull hardest.
+      for (const edge of graph.edges) {
+        const a = positions.get(edge.source);
+        const b = positions.get(edge.target);
+        if (!a || !b) continue;
+        const weight =
+          0.05 *
+          (0.25 +
+            0.75 * Math.min(flow(edge.source), flow(edge.target)));
+        const dy = b.y - a.y;
+        const dz = b.z - a.z;
+        forceFor(edge.source).x += dy * weight;
+        forceFor(edge.source).y += dz * weight;
+        forceFor(edge.target).x -= dy * weight;
+        forceFor(edge.target).y -= dz * weight;
+      }
+
+      // Each channel wants to stay a river, not a scatter of beads.
+      const sums = new Map<string, { y: number; z: number; w: number }>();
+      for (const id of validNodes) {
+        const key = channelOf.get(id)!;
+        const point = positions.get(id)!;
+        const weight = 0.4 + flow(id);
+        const sum = sums.get(key) ?? { y: 0, z: 0, w: 0 };
+        sum.y += point.y * weight;
+        sum.z += point.z * weight;
+        sum.w += weight;
+        sums.set(key, sum);
+      }
+      for (const id of validNodes) {
+        const key = channelOf.get(id)!;
+        const sum = sums.get(key)!;
+        const point = positions.get(id)!;
+        const pull = 0.022 * (0.35 + flow(id));
+        forceFor(id).x += (sum.y / sum.w - point.y) * pull;
+        forceFor(id).y += (sum.z / sum.w - point.z) * pull;
+      }
+
+      // Clearance only between different channels. Nodes along one channel
+      // are meant to share a line.
+      for (let i = 0; i < validNodes.length; i++) {
+        const aId = validNodes[i];
+        const a = positions.get(aId)!;
+        const aChannel = channelOf.get(aId)!;
+        for (let j = i + 1; j < validNodes.length; j++) {
+          const bId = validNodes[j];
+          const bChannel = channelOf.get(bId)!;
+          if (aChannel === bChannel) continue;
+          const b = positions.get(bId)!;
+          if (Math.abs(a.x - b.x) > 6) continue;
+          let dy = a.y - b.y;
+          let dz = a.z - b.z;
+          const distance = Math.hypot(dy, dz);
+          if (distance > 6.5) continue;
+          const clearance =
+            3.4 + 2.2 * Math.max(flow(aId), flow(bId));
+          if (distance >= clearance) continue;
+          const push =
+            ((clearance - distance) / clearance) *
+            0.16 *
+            (0.5 + Math.max(flow(aId), flow(bId)));
+          if (distance < 0.05) {
+            dy = i % 2 ? 1 : -1;
+            dz = j % 2 ? 1 : -1;
+          } else {
+            dy /= distance;
+            dz /= distance;
+          }
+          forceFor(aId).x += dy * push;
+          forceFor(aId).y += dz * push;
+          forceFor(bId).x -= dy * push;
+          forceFor(bId).y -= dz * push;
+        }
+      }
+
+      // Keep headwaters and mouths legible and prevent global drift.
+      for (const id of validNodes) {
+        const point = positions.get(id)!;
+        const anchor = initial.get(id)!;
+        const special = parkedAt.has(id) || displayLevel.has(id);
+        const endpoint = !hasIncoming.has(id) || !hasOutgoing.has(id);
+        const pull =
+          special ? 0.11 : endpoint ? 0.045 : 0.014;
+        forceFor(id).x += (anchor.y - point.y) * pull;
+        forceFor(id).y += (anchor.z - point.z) * pull;
+      }
+
+      // Damped Verlet-style integration in the YZ plane.
+      for (const id of validNodes) {
+        const point = positions.get(id)!;
+        let v = velocity.get(id);
+        if (!v) {
+          v = new THREE.Vector2();
+          velocity.set(id, v);
+        }
+        const force = forceFor(id);
+        v.x = (v.x + force.x) * 0.78;
+        v.y = (v.y + force.y) * 0.78;
+        point.y += v.x * 0.32;
+        point.z += v.y * 0.32;
+        point.y = Math.max(
+          0.3 - maxLevelBefore * flowLevelSpacing - 12,
+          Math.min(8, point.y),
+        );
+        point.z = Math.max(
+          -maxAbsZBefore - 18,
+          Math.min(maxAbsZBefore + 18, point.z),
+        );
+      }
+    }
+
+    const layoutPoint = (id: string) =>
+      positions.get(id) ?? parkedAt.get(id) ?? pointFor(id);
+    let maxAbsZ = 0;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxBoundX = Number.NEGATIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const id of validNodes) {
+      const point = layoutPoint(id);
+      maxAbsZ = Math.max(maxAbsZ, Math.abs(point.z));
+      minX = Math.min(minX, point.x);
+      maxBoundX = Math.max(maxBoundX, point.x);
+      minY = Math.min(minY, point.y);
+      maxY = Math.max(maxY, point.y);
+    }
+    const frameMinX = Math.min(-4, minX - 4);
+    const frameMaxX = Math.max(maxX + 4, maxBoundX + 4);
+    const frameMinY = minY - 4.2;
+    const frameMaxY = maxY + 4.8;
     const frameMinZ = -(maxAbsZ + 4);
     const frameMaxZ = maxAbsZ + 4;
     const frameSizeX = frameMaxX - frameMinX;
@@ -675,7 +899,7 @@ export default function Architecture({
     for (const id of validNodes) {
       const node = byId.get(id)!;
       const info = analysis.nodes[id];
-      const point = parkedAt.get(id) ?? pointFor(id);
+      const point = layoutPoint(id);
       pointMap.set(id, point);
       const group = new THREE.Group();
       group.position.copy(point).add(manualOffset(id));
@@ -1065,6 +1289,11 @@ export default function Architecture({
       };
       const start = extremes(source);
       const end = extremes(target);
+      for (const extent of [start, end]) {
+        const middle = extent.top.clone().add(extent.bottom).multiplyScalar(0.5);
+        extent.top.lerp(middle, 0.28);
+        extent.bottom.lerp(middle, 0.28);
+      }
       const top = makeSpline(start.top, end.top, 0.18).getPoints(28);
       const bottom = makeSpline(start.bottom, end.bottom, 0.18).getPoints(28);
       const positions: number[] = [];
@@ -1108,7 +1337,7 @@ export default function Architecture({
           new THREE.MeshBasicMaterial({
             vertexColors: true,
             transparent: true,
-            opacity: 0.17,
+            opacity: 0.13,
             side: THREE.DoubleSide,
             depthWrite: false,
           }),
