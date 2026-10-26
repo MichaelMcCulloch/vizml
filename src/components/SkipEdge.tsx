@@ -6,6 +6,6 @@ export default function SkipEdge({ id, sourceX, sourceY, targetX, targetY, style
   const path = `M ${sourceX} ${sourceY} C ${sourceX + bend} ${sourceY - lift}, ${targetX - bend} ${targetY - lift}, ${targetX} ${targetY}`;
   return <>
     <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} />
-    {label && <text x={(sourceX + targetX) / 2} y={(sourceY + targetY) / 2 - lift * .75 - 9} textAnchor="middle" fill="#cbaa90" fontSize={10}>{label}</text>}
+    {label && <text x={(sourceX + targetX) / 2} y={(sourceY + targetY) / 2 - lift * .75 - 9} textAnchor="middle" fill="rgb(var(--graph-label-rgb))" fontSize={10}>{label}</text>}
   </>;
 }

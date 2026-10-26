@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -29,6 +29,9 @@ import {
   PanelLeftClose,
   ArrowUpRight,
   FileSearch,
+  Moon,
+  Monitor,
+  Sun,
 } from "lucide-react";
 import Architecture from "./components/Architecture";
 import ResizablePanels from "./components/ResizablePanels";
@@ -61,6 +64,36 @@ import { download, fileName, useEngine } from "./useEngine";
 const nodeTypes = { layer: LayerNode };
 const edgeTypes = { skip: SkipEdge };
 const STORAGE = "vizml.graph.v1";
+const THEME_STORAGE = "vizml.theme";
+type ThemeMode = "light" | "dark" | "system";
+function themeInk(hex: string, theme: "light" | "dark") {
+  if (theme === "dark") return hex;
+  const value = hex.replace("#", "");
+  const expanded =
+    value.length === 3
+      ? value
+          .split("")
+          .map((part) => part + part)
+          .join("")
+      : value.slice(0, 6);
+  const number = Number.parseInt(expanded, 16);
+  if (!Number.isFinite(number)) return "#4d5b6b";
+  const red = Math.round(((number >> 16) & 255) * 0.55);
+  const green = Math.round(((number >> 8) & 255) * 0.55);
+  const blue = Math.round((number & 255) * 0.55);
+  return `rgb(${red} ${green} ${blue})`;
+}
+
+function initialTheme(): ThemeMode {
+  try {
+    const value = localStorage.getItem(THEME_STORAGE);
+    if (value === "light" || value === "dark" || value === "system")
+      return value;
+  } catch {
+    /* Use the system preference. */
+  }
+  return "system";
+}
 function initialGraph() {
   try {
     const value = localStorage.getItem(STORAGE);
@@ -73,6 +106,12 @@ function initialGraph() {
 
 export default function App() {
   const [graph, setGraph] = useState<ModelGraph>(initialGraph);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(initialTheme);
+  const [systemDark, setSystemDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
+  const effectiveTheme: "light" | "dark" =
+    themeMode === "system" ? (systemDark ? "dark" : "light") : themeMode;
   const graphRef = useRef(graph);
   graphRef.current = graph;
   const [selected, setSelected] = useState<string | null>(
@@ -105,6 +144,26 @@ export default function App() {
     const ids = new Set(scopes.find(s => s.id === scope)?.ids ?? graph.nodes.map(n => n.id));
     return { ...graph, nodes: graph.nodes.filter(n => ids.has(n.id)), edges: graph.edges.filter(e => ids.has(e.source) && ids.has(e.target)) };
   }, [graph, schematic, scope, scopes]);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const change = () => setSystemDark(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = effectiveTheme;
+    try {
+      localStorage.setItem(THEME_STORAGE, themeMode);
+    } catch {
+      /* Theme still applies for this session. */
+    }
+    const meta = document.querySelector('meta[name="theme-color"]');
+    meta?.setAttribute(
+      "content",
+      effectiveTheme === "dark" ? "#0e1219" : "#f8fafc",
+    );
+  }, [themeMode, effectiveTheme]);
+
   useEffect(() => {
     localStorage.setItem("vizml.snapshot.focus", scope);
     if (schematic && !scopes.some(s => s.id === scope)) setScope("all");
@@ -461,7 +520,9 @@ export default function App() {
         ? catalog.residual.color
         : source
           ? catalog[source.data.kind].color
-          : "#a3b681";
+          : "#8a98a8";
+    const stroke = themeInk(color, effectiveTheme);
+    const selectedStroke = effectiveTheme === "light" ? "#4055c7" : "#d8edba";
     return {
       ...e,
       sourceHandle: "out",
@@ -469,12 +530,18 @@ export default function App() {
       type: ["identity_skip", "detail_skip"].includes(String(e.data?.role)) ? "skip" : "default",
       selected: e.id === selectedEdge,
       label: cross ? (context ? "K / V" : "Query") : e.label,
-      labelStyle: { fill: "#ddadd2", fontSize: 9 },
-      labelBgStyle: { fill: "#1c231a", fillOpacity: 0.95 },
+      labelStyle: {
+        fill: themeInk("#ddadd2", effectiveTheme),
+        fontSize: 9,
+      },
+      labelBgStyle: {
+        fill: effectiveTheme === "light" ? "#ffffff" : "#1c231a",
+        fillOpacity: 0.95,
+      },
       style: {
-        stroke: e.id === selectedEdge ? "#d8edba" : color,
+        stroke: e.id === selectedEdge ? selectedStroke : stroke,
         strokeWidth: e.id === selectedEdge ? 2.5 : 1.6,
-        opacity: e.id === selectedEdge ? 1 : 0.65,
+        opacity: e.id === selectedEdge ? 1 : effectiveTheme === "light" ? 0.78 : 0.65,
         strokeDasharray: context || ["identity_skip", "detail_skip"].includes(String(e.data?.role)) ? "5 4" : undefined,
       },
     };
@@ -551,6 +618,36 @@ export default function App() {
           </span>
         </div>
         <div className="topbar-actions">
+          <div className="theme-switch" role="group" aria-label="Color theme">
+            <button
+              className={themeMode === "light" ? "active" : ""}
+              onClick={() => setThemeMode("light")}
+              title="Light theme"
+              aria-label="Light theme"
+              aria-pressed={themeMode === "light"}
+            >
+              <Sun size={13} />
+            </button>
+            <button
+              className={themeMode === "system" ? "active" : ""}
+              onClick={() => setThemeMode("system")}
+              title="Follow system theme"
+              aria-label="Follow system theme"
+              aria-pressed={themeMode === "system"}
+            >
+              <Monitor size={13} />
+            </button>
+            <button
+              className={themeMode === "dark" ? "active" : ""}
+              onClick={() => setThemeMode("dark")}
+              title="Dark theme"
+              aria-label="Dark theme"
+              aria-pressed={themeMode === "dark"}
+            >
+              <Moon size={13} />
+            </button>
+          </div>
+          <span className="topbar-divider" />
           <div className="example-picker" ref={menu}>
             <button
               className={`quiet-button example-trigger ${exampleMenu ? "active" : ""}`}
@@ -578,6 +675,7 @@ export default function App() {
               <Architecture
                 graph={viewGraph}
                 analysis={analysis}
+                theme={effectiveTheme}
                 selected={selected}
                 onSelect={select}
                 expanded={expanded}
@@ -727,7 +825,7 @@ export default function App() {
                     maxZoom={1.7}
                     deleteKeyCode={null}
                     panOnScroll
-                    colorMode="dark"
+                    colorMode={effectiveTheme}
                     connectionLineStyle={{
                       stroke: "#c1ed84",
                       strokeWidth: 1.5,

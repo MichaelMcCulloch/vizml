@@ -35,10 +35,16 @@ export function sequenceGeometry(
     transparent: true,
     opacity: focused ? 0.6 : 0.32,
   });
-  const line = (points: THREE.Vector3[], mat = lineMaterial) =>
-    group.add(
-      new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), mat),
-    );
+  const lineBatches = new Map<THREE.LineBasicMaterial, number[]>();
+  const line = (points: THREE.Vector3[], mat = lineMaterial) => {
+    const positions = lineBatches.get(mat) ?? [];
+    for (let i = 1; i < points.length; i++)
+      positions.push(
+        ...points[i - 1].toArray(),
+        ...points[i].toArray(),
+      );
+    lineBatches.set(mat, positions);
+  };
   const box = (
     geometry: THREE.BoxGeometry,
     x: number,
@@ -63,6 +69,11 @@ export function sequenceGeometry(
   if (streams) {
     const lanes = 4;
     const positions = Array.from({ length: lanes }, (_, i) => (i - 1.5) * 0.9);
+    const streamSkipMaterial = new THREE.LineBasicMaterial({
+      color: "#e8a286",
+      transparent: true,
+      opacity: 0.55,
+    });
     for (const z of positions) {
       box(new THREE.BoxGeometry(0.12, height, 0.65), 0, z);
       for (const y of sampled)
@@ -76,14 +87,7 @@ export function sequenceGeometry(
         new THREE.Vector3(0.7, 2.5, z),
         new THREE.Vector3(0.7, 0.6, z),
       );
-      line(
-        skip.getPoints(24),
-        new THREE.LineBasicMaterial({
-          color: "#e8a286",
-          transparent: true,
-          opacity: 0.55,
-        }),
-      );
+      line(skip.getPoints(24), streamSkipMaterial);
     }
     if (node.data.kind === "deepseek_stage") {
       const mixing = new THREE.LineBasicMaterial({
@@ -116,13 +120,13 @@ export function sequenceGeometry(
         bank.setMatrixAt(i, transform.matrix);
         bank.setColorAt(
           i,
-          new THREE.Color(i < 6 ? "#c1ed84" : i === 15 ? "#7acfd6" : "#3a4c41"),
+          new THREE.Color(i < 6 ? "#8ecdf4" : i === 15 ? "#7acfd6" : "#2c3743"),
         );
       }
       bank.userData.nodeId = node.id;
       meshes.push(bank);
       group.add(bank);
-      badge("6 / 384 EXPERTS + SHARED", "#a6c290", 2.7);
+      badge("6 / 384 EXPERTS + SHARED", "#9fb0c3", 2.7);
     } else badge("4 RESIDUAL STREAMS", "#e8a286", 2.7);
   } else {
     const repeated = node.data.kind === "transformer_block";
@@ -136,7 +140,7 @@ export function sequenceGeometry(
         const rowMaterial =
           i < Math.min(prefix, 5)
             ? new THREE.LineBasicMaterial({
-                color: i === 0 ? "#c1ed84" : "#d6bf83",
+                color: i === 0 ? "#8ecdf4" : "#d6bf83",
                 transparent: true,
                 opacity: 0.8,
               })
@@ -192,7 +196,7 @@ export function sequenceGeometry(
             tiles.setColorAt(
               index,
               new THREE.Color(
-                causal && k > q ? "#1c2922" : color,
+                causal && k > q ? "#26303b" : color,
               ).multiplyScalar(
                 causal && k > q ? 0.45 : 0.6 + ((q + k + h) % 3) * 0.18,
               ),
@@ -203,6 +207,11 @@ export function sequenceGeometry(
       meshes.push(tiles);
       group.add(tiles);
       if (repeated) {
+        const blockSkipMaterial = new THREE.LineBasicMaterial({
+          color: "#e8a286",
+          transparent: true,
+          opacity: 0.7,
+        });
         for (const [z, lift] of [
           [-width * 0.3, 2.3],
           [width * 0.3, 2.7],
@@ -213,14 +222,7 @@ export function sequenceGeometry(
             new THREE.Vector3(0.8, lift, z),
             new THREE.Vector3(0.8, 0.6, z),
           );
-          line(
-            skip.getPoints(28),
-            new THREE.LineBasicMaterial({
-              color: "#e8a286",
-              transparent: true,
-              opacity: 0.7,
-            }),
-          );
+          line(skip.getPoints(28), blockSkipMaterial);
         }
       }
       badge(
@@ -230,7 +232,17 @@ export function sequenceGeometry(
       );
     }
   }
-  return sampled.map(
-    (y) => new THREE.Vector3(group.position.x, group.position.y + y, 0),
-  );
+  for (const [mat, positions] of lineBatches)
+    group.add(
+      new THREE.LineSegments(
+        new THREE.BufferGeometry().setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(positions, 3),
+        ),
+        mat,
+      ),
+    );
+  // Local to the layer group so manual 3D placement can translate the whole
+  // glyph and its connectivity together.
+  return sampled.map((y) => new THREE.Vector3(0, y, 0));
 }
