@@ -21,6 +21,7 @@ import {
   type Params,
 } from "../model";
 import SequenceInspector from "./SequenceInspector";
+import RecurrentInspector from "./RecurrentInspector";
 import SchematicInspector from "./SchematicInspector";
 
 type Props = {
@@ -47,6 +48,12 @@ type Field = {
   step?: number | "any";
 };
 const fields: Partial<Record<Kind, Field[]>> = {
+  grid_sequence_input: [
+    { key: "steps", label: "Time steps", max: 1048576 },
+    { key: "channels", label: "Channels per step" },
+    { key: "height", label: "Height", max: 256 },
+    { key: "width", label: "Width", max: 256 },
+  ],
   grid_input: [
     { key: "width", label: "Width", max: 256 },
     { key: "height", label: "Height", max: 256 },
@@ -61,8 +68,8 @@ const fields: Partial<Record<Kind, Field[]>> = {
     },
   ],
   sequence_input: [
-    { key: "tokens", label: "Token count", max: 1048576 },
-    { key: "features", label: "Embedding width" },
+    { key: "tokens", label: "Steps / tokens", max: 1048576 },
+    { key: "features", label: "Features per step" },
   ],
   token_input: [{ key: "tokens", label: "Token count", max: 1048576 }],
   token_embedding: [
@@ -337,6 +344,7 @@ export default function Inspector({
           onExpand={() => onExpandStage(node.id)}
           onSwap={() => onSwapInputs(node.id)}
         />
+        <RecurrentInspector node={node} info={info} onChange={change} />
         {["conv2d", "dense", "residual"].includes(kind) && (
           <div className="inspector-section">
             <label className="field-label" htmlFor="activation">

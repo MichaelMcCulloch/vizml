@@ -6,6 +6,7 @@ import {
   formatNumber,
   isInput,
   isOutput,
+  isRecurrent,
   shapeText,
   type Analysis,
   type LayerNode as LayerNodeType,
@@ -61,7 +62,8 @@ function LayerNode({ id, data, selected }: NodeProps<LayerNodeType>) {
             ? "Backbone feature vector"
             : baseDetail;
   const sequenceDetail: Partial<Record<typeof data.kind, string>> = {
-    sequence_input: "T tokens × D features",
+    sequence_input: "T steps / tokens × D features",
+    grid_sequence_input: "T steps × C × H × W",
     token_input: "T integer token IDs",
     token_embedding: `${formatNumber(Number(p.vocab))} vocabulary · ${p.features}-D`,
     patch_embed: `${p.patch}×${p.patch} patches${Number(p.cls_token) ? " · CLS" : ""}${Number(p.registers) ? ` · ${p.registers} storage` : ""}`,
@@ -98,7 +100,9 @@ function LayerNode({ id, data, selected }: NodeProps<LayerNodeType>) {
       </div>
       <div className="layer-node-name">{data.label}</div>
       <div className="layer-detail">
-        {schematic ? schematicDetail : data.kind === "upsample2d" ? `${p.mode} → ${p.height} × ${p.width}` : sequenceDetail[data.kind] ??
+        {schematic ? schematicDetail : isRecurrent(data.kind)
+          ? `${p.hidden_size} hidden · ${p.layers} ${Number(p.layers) === 1 ? "layer" : "layers"}${Number(p.bidirectional) ? " · ↔" : ""} · ${Number(p.return_sequences ?? 1) ? "sequence" : "final state"}`
+          : data.kind === "upsample2d" ? `${p.mode} → ${p.height} × ${p.width}` : sequenceDetail[data.kind] ??
           (data.kind === "embedding" && info?.shape.length === 2
             ? "Token features"
             : detail)}

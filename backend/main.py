@@ -17,6 +17,14 @@ from . import checkpoints
 app = FastAPI(title="vizml", version="0.1.0")
 
 
+def graph_validation_message(error: ValidationError) -> str:
+    issue = error.errors(include_url=False, include_input=False)[0]
+    location = ".".join(str(part) for part in issue["loc"]) or "graph"
+    if issue["loc"] and issue["loc"][-1] == "kind" and issue["type"] == "literal_error":
+        return f"Unsupported node type at {location}. Restart the Python engine after updating vizml, or check the imported node type."
+    return f"Invalid graph data at {location}: {issue['msg']}"
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "engine": "pytorch", "protocol": 1}
@@ -123,7 +131,7 @@ async def graph_events(socket: WebSocket):
                     raise ValueError("Unknown event type.")
                 await socket.send_json({**response, "request_id": request_id})
             except (ValidationError, ValueError, RuntimeError, TypeError, KeyError, OverflowError, AssertionError) as error:
-                message = "Invalid graph data. Check node types and input values." if isinstance(error, ValidationError) else str(error)
+                message = graph_validation_message(error) if isinstance(error, ValidationError) else str(error)
                 await socket.send_json({"type": "error", "request_id": request_id, "message": message[:800]})
     except WebSocketDisconnect:
         pass

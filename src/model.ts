@@ -2,7 +2,11 @@ import type { Edge, Node } from "@xyflow/react";
 import catanOriginal from "../templates/catan_original.vizml.json" with { type: "json" };
 import catanSmall from "../templates/catan_convnext_small.vizml.json" with { type: "json" };
 
+export const recurrentKinds = ["rnn", "gru", "lstm", "conv_rnn", "conv_gru", "conv_lstm"] as const;
+export type RecurrentKind = typeof recurrentKinds[number];
 export type Kind =
+  | RecurrentKind
+  | "grid_sequence_input"
   | "grid_input"
   | "feature_input"
   | "conv2d"
@@ -66,6 +70,17 @@ export type NodeAnalysis = {
   prefix_tokens?: number;
   dtype?: string;
   layout?: string;
+  recurrent?: {
+    cell: "rnn" | "gru" | "lstm";
+    spatial: boolean;
+    steps: number;
+    layers: number;
+    directions: number;
+    hidden_size: number;
+    return_sequences: boolean;
+    state_shape: number[];
+    states: string[];
+  };
   context_shape?: number[];
   residual_blocks?: number;
   reference_only?: boolean;
@@ -97,7 +112,37 @@ type Definition = {
   symbol: string;
   defaults: Params;
 };
+const recurrentDefaults: Params = { hidden_size: 64, layers: 1, bias: 1, bidirectional: 0, return_sequences: 1, dropout: 0 };
+const spatialRecurrentDefaults: Params = { hidden_size: 32, layers: 1, bias: 1, return_sequences: 1, dropout: 0, kernel: 3, dilation: 1 };
 export const catalog: Record<Kind, Definition> = {
+  grid_sequence_input: {
+    title: "Grid sequence", subtitle: "Video & spatial time series", category: "Inputs",
+    color: "#8ecdf4", symbol: "▥", defaults: { steps: 8, channels: 3, height: 32, width: 32 },
+  },
+  rnn: {
+    title: "RNN", subtitle: "Recurrent hidden state", category: "Recurrent", color: "#84cfc0", symbol: "◌",
+    defaults: { ...recurrentDefaults, activation: "tanh" },
+  },
+  gru: {
+    title: "GRU", subtitle: "Reset & update gates", category: "Recurrent", color: "#a9b6eb", symbol: "◎",
+    defaults: { ...recurrentDefaults },
+  },
+  lstm: {
+    title: "LSTM", subtitle: "Hidden state & cell memory", category: "Recurrent", color: "#d6b18d", symbol: "⊚",
+    defaults: { ...recurrentDefaults },
+  },
+  conv_rnn: {
+    title: "ConvRNN", subtitle: "Recurrent spatial features", category: "Recurrent", color: "#84cfc0", symbol: "◌",
+    defaults: { ...spatialRecurrentDefaults, activation: "tanh" },
+  },
+  conv_gru: {
+    title: "ConvGRU", subtitle: "Gated spatial memory", category: "Recurrent", color: "#a9b6eb", symbol: "◎",
+    defaults: { ...spatialRecurrentDefaults },
+  },
+  conv_lstm: {
+    title: "ConvLSTM", subtitle: "Spatial hidden & cell memory", category: "Recurrent", color: "#d6b18d", symbol: "⊚",
+    defaults: { ...spatialRecurrentDefaults },
+  },
   grid_input: {
     title: "Grid input",
     subtitle: "Images & spatial data",
@@ -239,7 +284,7 @@ export const catalog: Record<Kind, Definition> = {
   },
   sequence_input: {
     title: "Sequence input",
-    subtitle: "Tokens × embedding width",
+    subtitle: "Time steps / tokens × features",
     category: "Inputs",
     color: "#8ecdf4",
     symbol: "▤",
@@ -435,9 +480,11 @@ export const bytesText = (value: number) =>
           ? `${(value / 1e6).toFixed(1)} MB`
           : `${(value / 1e3).toFixed(1)} KB`;
 export const isInput = (kind: Kind) =>
-  ["grid_input", "feature_input", "sequence_input", "token_input"].includes(
+  ["grid_input", "feature_input", "sequence_input", "token_input", "grid_sequence_input"].includes(
     kind,
   );
+export const isRecurrent = (kind: Kind): kind is RecurrentKind =>
+  (recurrentKinds as readonly string[]).includes(kind);
 export const isOutput = (kind: Kind) =>
   [
     "classification",
@@ -842,7 +889,31 @@ export function makeDeepSeekFlash(): ModelGraph {
   return graph;
 }
 
+export function makeRecurrent(kind: RecurrentKind): ModelGraph {
+  const spatial = kind.startsWith("conv_");
+  const cell = kind.replace("conv_", "") as RecurrentKind;
+  const nodes = [
+    spatial
+      ? node("input", "grid_sequence_input", "Spatial observations", 0, 80, { steps: 8, channels: 3, height: 16, width: 24 })
+      : node("input", "sequence_input", "Observations over time", 0, 80, { tokens: 24, features: 16 }),
+    node("memory", kind, `${catalog[kind].title} · temporal memory`, 280, 80,
+      { hidden_size: spatial ? 16 : 64, layers: 2, return_sequences: spatial ? 1 : 0 }),
+  ];
+  if (spatial) nodes.push(
+    node("pool", "global_avgpool", "Spatial summary per step", 560, 80),
+    node("readout", cell, `${catalog[cell].title} · sequence readout`, 840, 80, { hidden_size: 32, return_sequences: 0 }),
+  );
+  nodes.push(node("classes", "classification", "Sequence classification", spatial ? 1120 : 560, 80, { units: 5 }));
+  return { version: 1, name: `${catalog[kind].title} · ${spatial ? "spatial" : "sequence"} memory`,
+    template: kind, nodes, edges: edges(nodes.slice(1).map((n, i) => [nodes[i].id, n.id])) };
+}
+
 Object.assign(templateInfo, {
+  ...Object.fromEntries(recurrentKinds.map(kind => [kind, {
+    title: `${catalog[kind].title} · ${kind.startsWith("conv_") ? "spatial" : "sequence"} memory`,
+    subtitle: kind.startsWith("conv_") ? "Grid sequence → spatial memory → recurrent readout" : "Two recurrent layers · sequence classification",
+    source: "",
+  }])),
   catan_convnext_small: {
     title: "Catan · ConvNeXt Small",
     subtitle: "Untrained · 1.03M params · 32 / 48 / 64 · PPG heads",
@@ -892,6 +963,7 @@ Object.assign(templateInfo, {
 });
 
 export const examples: Record<string, () => ModelGraph> = {
+  ...Object.fromEntries(recurrentKinds.map(kind => [kind, () => makeRecurrent(kind)])),
   catan_convnext_small: () => parseGraph(JSON.stringify(catanSmall)),
   catan_original: () => parseGraph(JSON.stringify(catanOriginal)),
   transformer_encoder: () => makeTransformer("encoder"),

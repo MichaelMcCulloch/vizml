@@ -32,6 +32,19 @@ test("unequal bundles span both ends and single ports connect centrally", () => 
   expect(pairConnectionPorts([], row(3, 4))).toEqual([]);
 });
 
+test("symmetric circular ports do not exchange sides when resized or moved in 3D", () => {
+  for (const count of [6, 8, 12, 16, 24]) {
+    const circle = (x: number, y: number, z: number, radius: number) => Array.from({ length: count }, (_, i) =>
+      new THREE.Vector3(x, y + Math.cos(i / count * Math.PI * 2) * radius, z + Math.sin(i / count * Math.PI * 2) * radius));
+    const source = circle(0, 0, 0, 1.02);
+    const target = circle(5, 100, 7, 0.72).reverse();
+    for (const [a, b] of pairConnectionPorts(source, target)) {
+      expect(a.y / 1.02).toBeCloseTo((b.y - 100) / 0.72);
+      expect(a.z / 1.02).toBeCloseTo((b.z - 7) / 0.72);
+    }
+  }
+});
+
 test("ribbon boundaries never invert, including reversed and manually offset layers", () => {
   for (const x of [8, 0, -4]) {
     const source = connectionExtent(row(0, 13));

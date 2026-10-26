@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "name": "LSTM · sequence memory",
+  "template": "lstm",
+  "nodes": [
+    {
+      "id": "input",
+      "type": "layer",
+      "position": {
+        "x": 0,
+        "y": 80
+      },
+      "data": {
+        "kind": "sequence_input",
+        "label": "Observations over time",
+        "params": {
+          "tokens": 24,
+          "features": 16
+        }
+      }
+    },
+    {
+      "id": "memory",
+      "type": "layer",
+      "position": {
+        "x": 280,
+        "y": 80
+      },
+      "data": {
+        "kind": "lstm",
+        "label": "LSTM · temporal memory",
+        "params": {
+          "hidden_size": 64,
+          "layers": 2,
+          "bias": 1,
+          "bidirectional": 0,
+          "return_sequences": 0,
+          "dropout": 0
+        }
+      }
+    },
+    {
+      "id": "classes",
+      "type": "layer",
+      "position": {
+        "x": 560,
+        "y": 80
+      },
+      "data": {
+        "kind": "classification",
+        "label": "Sequence classification",
+        "params": {
+          "units": 5
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "input-memory",
+      "source": "input",
+      "target": "memory"
+    },
+    {
+      "id": "memory-classes",
+      "source": "memory",
+      "target": "classes"
+    }
+  ]
+}

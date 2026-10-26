@@ -40,6 +40,25 @@ Then open [localhost:5173](http://localhost:5173). Port 8000 is the Python API; 
 
 Shortcuts: **⌘/Ctrl Z** undo, **⌘/Ctrl Shift Z** redo, **⌘/Ctrl S** save, **Delete/Backspace** remove selection, **F** fit graph, **/** search blocks, **?** guide, **Escape** close/clear selection.
 
+## Recurrent memory
+
+The **Recurrent** library and template group include **RNN, GRU, LSTM, ConvRNN, ConvGRU, and ConvLSTM**. All six are executable, editable architectures with untrained weights; portable presets live in `templates/`. ConvNeXt recurrence is deferred.
+
+| Family | Input, excluding batch | Every-step output | Final hidden output |
+| --- | --- | --- | --- |
+| RNN / GRU / LSTM | T × features | T × (hidden · directions) | hidden · directions |
+| ConvRNN / ConvGRU / ConvLSTM | T × C × H × W | T × hidden channels × H × W | hidden channels × H × W |
+
+Use **Sequence input** or embedded tokens for vector recurrence. **Grid sequence** supplies spatial time series. Global average pooling preserves time while reducing spatial sequences to T × C; channel LayerNorm also supports spatial sequences. Multiple temporal dependencies concatenate features/channels only when time and spatial dimensions match.
+
+The inspector exposes hidden width, up to 16 stacked layers, sequence/final output, bias, and inter-layer dropout (requires at least two layers). Vector cells support bidirectionality; final output concatenates both final hidden states. Spatial cells are forward-only, with odd kernels up to 31 and dilation up to 16; same padding preserves H/W. RNN and ConvRNN support tanh or ReLU.
+
+Vector cells wrap native PyTorch [RNN](https://docs.pytorch.org/docs/2.14/generated/torch.nn.RNN.html), [GRU](https://docs.pytorch.org/docs/2.14/generated/torch.nn.GRU.html), and [LSTM](https://docs.pytorch.org/docs/2.14/generated/torch.nn.LSTM.html). ConvRNN applies a convolution to input and previous hidden state before activation. ConvGRU uses reset-before convolution, as in [Ballas et al.](https://arxiv.org/abs/1511.06432), with `z` denoting retention here: `h = z*h_prev + (1-z)*candidate`. Native PyTorch GRU instead applies reset after its hidden projection. ConvLSTM uses input/forget/candidate/output convolutions and separate hidden/cell states, **without peepholes**; it is a variant of the [ConvLSTM architecture](https://arxiv.org/abs/1506.04214), not an exact reproduction of that paper's cell.
+
+Each graph forward starts from zero state. Exported `VectorRecurrent` and `SpatialRecurrent` modules also accept an explicit state and `return_state=True` for chunked execution. State shape is (layers · directions) × batch × hidden for vector cells, and layers × batch × hidden × H × W for spatial cells; LSTM uses an `(h, c)` pair. Graph edges remain acyclic because time recurrence lives inside each module. Meta verification checks one shared transition and expands symbolic output shapes, so long sequences do not require unrolling for shape checks.
+
+The 3D view uses quiet woven hoops with subtle hints of the cell structure: two stitches for GRU's gates, and a light inner memory thread for LSTM. Spatial variants place a faint grid and translucent volume inside the same woven silhouette. Sampled hoops suggest layer depth; the inspector explains the actual gates and equations. These are architectural illustrations, not measured activations. Restrained perimeter flow shares pause, reduced-motion behavior, and the master ¼×–40× speed slider with graph connections.
+
 ## DINOv3 ConvNeXt templates
 
 Open **Templates → DINOv3 ConvNeXt Tiny**, Small, Base, or Large. Portable JSON presets also live in `templates/`. These are editable inference-backbone architectures with normalized embedding outputs and untrained weights. They follow [Meta's ConvNeXt implementation](https://github.com/facebookresearch/dinov3/blob/6876159a11b4df116f30f667f8c9888617df0751/dinov3/models/convnext.py).
@@ -174,7 +193,7 @@ Bun serves the UI and proxies binary HTTP and graph WebSocket traffic; Python co
 
 The checked-in Bun patch for React Flow schedules resize measurements on animation frames, avoiding ResizeObserver feedback loops during panel resizing.
 
-Main modules: `backend/graph.py` and `backend/attention.py` for shape inference, `backend/deepseek.py` for reference analysis, `backend/builder.py` and `backend/torch_attention.py` for PyTorch, `backend/main.py` for transport, `src/model.ts` for graph types/catalog/examples, and `src/components/Architecture.tsx` for the independent renderer. New blocks extend the schema, inference, builder, catalog, inspector, and renderer as appropriate.
+Main modules: `backend/graph.py`, `backend/attention.py`, and `backend/recurrent.py` for shape inference, `backend/deepseek.py` for reference analysis, `backend/builder.py`, `backend/torch_attention.py`, and `backend/torch_recurrent.py` for PyTorch, `backend/main.py` for transport, `src/model.ts` for graph types/catalog/examples, and `src/components/Architecture.tsx` for the independent renderer. New blocks extend the schema, inference, builder, catalog, inspector, and renderer as appropriate.
 
 ## Verify
 
@@ -183,7 +202,7 @@ bun run build
 bun run test
 ```
 
-Tests cover analytical shapes against real PyTorch execution, mixed-branch concatenation, residual compatibility, dilation/groups/padding/pooling, zero and maximum inputs, logits/one-hot/regression semantics, malformed/cyclic graphs, export, and WebSocket error recovery. Sequence tests compare attention numerically with PyTorch, enforce causal isolation from future tokens, exercise cross-attention with different context sizes, check 2D RoPE metadata through residuals, and verify all portable transformer templates. Node tests cover template round trips and expanded decoder context wiring.
+Tests cover analytical shapes against real PyTorch execution, mixed-branch concatenation, residual compatibility, dilation/groups/padding/pooling, zero and maximum inputs, logits/one-hot/regression semantics, malformed/cyclic graphs, export, and WebSocket error recovery. Sequence tests compare attention numerically with PyTorch, enforce causal isolation from future tokens, exercise cross-attention with different context sizes, check 2D RoPE metadata through residuals, and verify all portable transformer templates. Recurrent tests check native parity, bidirectional final states, convolutional gate equations, causality, gradients, chunked state, parameter counts, exported weight round trips, and template switching over WebSocket. Renderer tests verify bounded geometry, consistent connection orientation, closed flow paths, and selection of open woven cells. Node tests also cover template round trips and expanded decoder context wiring.
 
 ## Roadmap
 

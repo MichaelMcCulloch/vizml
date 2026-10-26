@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "name": "ConvLSTM · spatial memory",
+  "template": "conv_lstm",
+  "nodes": [
+    {
+      "id": "input",
+      "type": "layer",
+      "position": {
+        "x": 0,
+        "y": 80
+      },
+      "data": {
+        "kind": "grid_sequence_input",
+        "label": "Spatial observations",
+        "params": {
+          "steps": 8,
+          "channels": 3,
+          "height": 16,
+          "width": 24
+        }
+      }
+    },
+    {
+      "id": "memory",
+      "type": "layer",
+      "position": {
+        "x": 280,
+        "y": 80
+      },
+      "data": {
+        "kind": "conv_lstm",
+        "label": "ConvLSTM · temporal memory",
+        "params": {
+          "hidden_size": 16,
+          "layers": 2,
+          "bias": 1,
+          "return_sequences": 1,
+          "dropout": 0,
+          "kernel": 3,
+          "dilation": 1
+        }
+      }
+    },
+    {
+      "id": "pool",
+      "type": "layer",
+      "position": {
+        "x": 560,
+        "y": 80
+      },
+      "data": {
+        "kind": "global_avgpool",
+        "label": "Spatial summary per step",
+        "params": {}
+      }
+    },
+    {
+      "id": "readout",
+      "type": "layer",
+      "position": {
+        "x": 840,
+        "y": 80
+      },
+      "data": {
+        "kind": "lstm",
+        "label": "LSTM · sequence readout",
+        "params": {
+          "hidden_size": 32,
+          "layers": 1,
+          "bias": 1,
+          "bidirectional": 0,
+          "return_sequences": 0,
+          "dropout": 0
+        }
+      }
+    },
+    {
+      "id": "classes",
+      "type": "layer",
+      "position": {
+        "x": 1120,
+        "y": 80
+      },
+      "data": {
+        "kind": "classification",
+        "label": "Sequence classification",
+        "params": {
+          "units": 5
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "input-memory",
+      "source": "input",
+      "target": "memory"
+    },
+    {
+      "id": "memory-pool",
+      "source": "memory",
+      "target": "pool"
+    },
+    {
+      "id": "pool-readout",
+      "source": "pool",
+      "target": "readout"
+    },
+    {
+      "id": "readout-classes",
+      "source": "readout",
+      "target": "classes"
+    }
+  ]
+}

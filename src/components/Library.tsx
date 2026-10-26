@@ -42,7 +42,7 @@ export default function Library({ onAdd }: { onAdd: (kind: Kind) => void }) {
         <kbd>/</kbd>
       </div>
       <div className="library-scroll">
-        {["Inputs", "Attention", "Layers", "Composition", "Reference", "Outputs"].map((category) => {
+        {["Inputs", "Recurrent", "Attention", "Layers", "Composition", "Reference", "Outputs"].map((category) => {
           const items = filtered.filter(
             ([, item]) => item.category === category,
           );

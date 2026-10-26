@@ -17,11 +17,13 @@ import {
   catalog,
   isInput,
   isOutput,
+  isRecurrent,
   shapeText,
   type Analysis,
   type ModelGraph,
 } from "../model";
 import { sequenceGeometry } from "./sequenceGeometry";
+import { recurrentGeometry, recurrentMetrics, spatialScale, type SpatialFace } from "./recurrentGeometry";
 import {
   connectionExtent,
   makeConnectionCurve,
@@ -322,6 +324,8 @@ export default function Architecture({
     const maxX = Math.max(1, ...[...depths.values()].map(xForDepth));
     const pointMap = new Map<string, THREE.Vector3>();
     const neurons = new Map<string, THREE.Vector3[]>();
+    const inputNeurons = new Map<string, THREE.Vector3[]>();
+    const spatialFaces = new Map<string, { input: SpatialFace; output: SpatialFace }>();
     const halfDepth = new Map<string, number>();
     const meshes: THREE.Object3D[] = [];
 
@@ -404,7 +408,7 @@ export default function Architecture({
       if (!info) return "other";
       if (info.layout === "streams" || info.shape.length === 2)
         return "sequence";
-      if (info.shape.length === 3) return "spatial";
+      if (info.shape.length === 3 || info.shape.length === 4) return "spatial";
       if (info.shape.length === 1) return "vector";
       return "other";
     };
@@ -621,14 +625,14 @@ export default function Architecture({
           childLanes.length,
       );
     }
-    const spatialScale = (v: number) =>
-      Math.max(0.65, Math.min(5.3, Math.sqrt(v / 32) * 3.4));
     for (const id of validNodes) {
       const node = byId.get(id)!;
       const info = analysis.nodes[id];
-      if (info.shape.length === 3) {
+      if (isRecurrent(node.data.kind)) {
+        halfDepth.set(id, recurrentMetrics(node, info).halfDepth);
+      } else if (info.shape.length === 3 || info.shape.length === 4) {
         const count =
-          node.data.kind === "convnext_stage"
+          info.shape.length === 4 ? Math.min(6, info.shape[0]) : node.data.kind === "convnext_stage"
             ? Math.min(12, Number(node.data.params.blocks))
             : node.data.kind === "layernorm"
               ? 1
@@ -675,7 +679,9 @@ export default function Architecture({
     };
     const halfWidthOf = (id: string) => {
       const shape = analysis.nodes[id]?.shape ?? [];
-      if (shape.length === 3) return spatialScale(shape[2]) / 2;
+      const node = byId.get(id)!;
+      if (isRecurrent(node.data.kind)) return recurrentMetrics(node, analysis.nodes[id]).radius;
+      if (shape.length === 3 || shape.length === 4) return spatialScale(shape.at(-1)!) / 2;
       if (shape.length === 2) return 0.9;
       return 0.25;
     };
@@ -898,6 +904,7 @@ export default function Architecture({
       return new THREE.Vector3(offset[0], offset[1], offset[2]);
     };
     const layerGroups = new Map<string, THREE.Group>();
+    const recurrentLoops = new Map<string, THREE.Vector3[][]>();
 
     for (const id of validNodes) {
       const node = byId.get(id)!;
@@ -921,7 +928,17 @@ export default function Architecture({
         depthWrite: false,
         side: THREE.DoubleSide,
       });
-      if (
+      if (isRecurrent(node.data.kind)) {
+        const glyph = recurrentGeometry(group, node, info, color, focused, meshes, opacity);
+        if (glyph.ports) neurons.set(id, glyph.ports);
+        if (glyph.inputPorts) inputNeurons.set(id, glyph.inputPorts);
+        if (glyph.spatialFaces) spatialFaces.set(id, glyph.spatialFaces);
+        recurrentLoops.set(id, glyph.loops);
+        halfDepth.set(id, glyph.halfDepth);
+        const badge = labelSprite(`${node.data.params.layers ?? 1}L · ${glyph.directions === 2 ? "↔ · " : ""}${glyph.cell === "lstm" ? "h + c" : "h"} · ${info.recurrent?.steps ?? info.input_shape[0]} STEPS`, badgeInk, 0.36);
+        badge.position.set(0, Math.max(2.35, glyph.radius + 0.4), 0);
+        group.add(badge);
+      } else if (
         info.shape.length === 2 ||
         info.layout === "streams" ||
         node.data.kind === "token_input"
@@ -953,12 +970,12 @@ export default function Architecture({
         } else {
           halfDepth.set(id, 0.05);
         }
-      } else if (info.shape.length === 3) {
-        const [channels, h, w] = info.shape;
+      } else if (info.shape.length === 3 || info.shape.length === 4) {
+        const [channels, h, w] = info.shape.slice(-3);
         const height = spatialScale(h),
           width = spatialScale(w);
         const count =
-          node.data.kind === "convnext_stage"
+          info.shape.length === 4 ? Math.min(6, info.shape[0]) : node.data.kind === "convnext_stage"
             ? Math.min(12, Number(node.data.params.blocks))
             : node.data.kind === "layernorm"
               ? 1
@@ -1166,9 +1183,9 @@ export default function Architecture({
       const base = pointMap.get(id);
       return base ? base.clone().add(manualOffset(id)) : undefined;
     };
-    const worldNeurons = (id: string) => {
+    const worldNeurons = (id: string, input = false) => {
       const origin = worldPoint(id);
-      const local = neurons.get(id);
+      const local = (input ? inputNeurons.get(id) : undefined) ?? neurons.get(id);
       return origin && local ? local.map((point) => origin.clone().add(point)) : undefined;
     };
 
@@ -1193,6 +1210,15 @@ export default function Architecture({
     const flowMaterial = createFlowMaterial(theme);
     flowMaterial.uniforms.uTime.value = flowTime.current;
     sharedMaterials.add(flowMaterial);
+    for (const [id, loops] of recurrentLoops) {
+      const color = displayColor(catalog[byId.get(id)!.data.kind].color, theme);
+      for (const points of loops) {
+        const { progress, length } = pathProgress(points);
+        const geometry = applyFlowAttributes(new THREE.BufferGeometry().setFromPoints(points), progress,
+          { profile: flowProfile(flow(id), id, length), color, opacity: (selected && selected !== id ? 0.65 : 1) * 0.14 });
+        layerGroups.get(id)!.add(new THREE.Line(geometry, flowMaterial));
+      }
+    }
     const addSpline = (
       group: THREE.Group,
       start: THREE.Vector3,
@@ -1303,6 +1329,10 @@ export default function Architecture({
       const targetHalf = halfDepth.get(edge.target) ?? 0.15;
       const aFace = a.clone().add(new THREE.Vector3(sourceHalf, 0, 0));
       const bFace = b.clone().sub(new THREE.Vector3(targetHalf, 0, 0));
+      const sourceSpatialFace = spatialFaces.get(edge.source)?.output;
+      const targetSpatialFace = spatialFaces.get(edge.target)?.input;
+      if (sourceSpatialFace) aFace.add(sourceSpatialFace.center);
+      if (targetSpatialFace) bFace.add(targetSpatialFace.center);
       const target = byId.get(edge.target)!;
       const residual = edge.data?.role === "identity_skip" || edge.data?.role === "detail_skip" ||
         (target.data.kind === "residual" &&
@@ -1311,7 +1341,7 @@ export default function Architecture({
       const an = worldNeurons(edge.source)?.map((point) =>
         point.clone().add(new THREE.Vector3(sourceHalf, 0, 0)),
       );
-      const bn = worldNeurons(edge.target)?.map((point) =>
+      const bn = worldNeurons(edge.target, true)?.map((point) =>
         point.clone().sub(new THREE.Vector3(targetHalf, 0, 0)),
       );
       const color = displayColor(
@@ -1401,12 +1431,12 @@ export default function Architecture({
       } else {
         const sourceShape = analysis.nodes[edge.source].shape,
           targetShape = analysis.nodes[edge.target].shape;
-        if (sourceShape.length === 3 && targetShape.length === 3) {
+        if ([3, 4].includes(sourceShape.length) && [3, 4].includes(targetShape.length)) {
           const volume = spatialConnection(
             aFace,
             bFace,
-            [spatialScale(sourceShape[1]), spatialScale(sourceShape[2])],
-            [spatialScale(targetShape[1]), spatialScale(targetShape[2])],
+            sourceSpatialFace?.dimensions ?? [spatialScale(sourceShape.at(-2)!), spatialScale(sourceShape.at(-1)!)],
+            targetSpatialFace?.dimensions ?? [spatialScale(targetShape.at(-2)!), spatialScale(targetShape.at(-1)!)],
           );
           const { progress } = pathProgress(volume.centerline);
           applyFlowAttributes(

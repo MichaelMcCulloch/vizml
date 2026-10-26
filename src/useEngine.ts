@@ -100,7 +100,14 @@ export function useEngine(
               "The previous graph passed PyTorch verification. Verify again to check your latest edits.",
             );
         }
-        if (event.type === "error") notice.current(event.message, true);
+        if (event.type === "error") {
+          if (event.request_id === `analyze-${revision.current}`) {
+            setAnalysis(null);
+            setChecking(false);
+          }
+          if (!String(event.request_id ?? "").startsWith("analyze-") || event.request_id === `analyze-${revision.current}`)
+            notice.current(event.message, true);
+        }
         if (pending.current.delete(event.request_id))
           setBusy(pending.current.size > 0);
       };

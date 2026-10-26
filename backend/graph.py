@@ -4,11 +4,12 @@ from collections import deque
 from math import prod
 
 from .attention import KINDS as SEQUENCE_KINDS, infer_sequence
+from .recurrent import KINDS as RECURRENT_KINDS, infer_recurrent
 from .schema import Graph, GraphNode
 from .validation import integer, real
 
 ACTIVATIONS = {"relu", "gelu", "silu", "tanh", "none"}
-INPUTS = {"feature_input", "grid_input", "sequence_input", "token_input"}
+INPUTS = {"feature_input", "grid_input", "sequence_input", "token_input", "grid_sequence_input"}
 OUTPUTS = {"classification", "regression", "embedding", "token_head", "deepseek_head", "deepseek_draft"}
 
 
@@ -23,6 +24,10 @@ def merge_shapes(shapes: list[list[int]], residual: bool = False) -> tuple[list[
         return shapes[0], "add"
     if len(shapes) == 1:
         return shapes[0], "single"
+    if any(len(shape) == 4 for shape in shapes):
+        if not all(len(shape) == 4 and shape[0] == shapes[0][0] and shape[2:] == shapes[0][2:] for shape in shapes):
+            raise ValueError("Grid sequences need matching time, height and width to concatenate channels. Flatten each branch to join incompatible layouts.")
+        return [shapes[0][0], sum(shape[1] for shape in shapes), *shapes[0][2:]], "sequence_channels"
     if all(len(shape) == 3 for shape in shapes):
         if any(shape[1:] != shapes[0][1:] for shape in shapes):
             raise ValueError("Grid dependencies need matching height and width to concatenate channels. Flatten each branch to join different grid sizes.")
@@ -37,6 +42,8 @@ def merge_shapes(shapes: list[list[int]], residual: bool = False) -> tuple[list[
 def infer_node(node: GraphNode, incoming: list[list[int]], infos: list[dict] | None = None) -> dict:
     kind, p = node.data.kind, node.data.params
     infos = infos or [{} for _ in incoming]
+    if kind in RECURRENT_KINDS:
+        return infer_recurrent(node, incoming, infos)
     if kind in SEQUENCE_KINDS:
         return infer_sequence(node, incoming, infos)
     if kind.startswith("deepseek_"):
@@ -60,8 +67,10 @@ def infer_node(node: GraphNode, incoming: list[list[int]], infos: list[dict] | N
     else:
         in_shape, merge = merge_shapes(incoming, kind == "residual")
         shape = in_shape.copy()
-        if kind in {"conv2d", "maxpool2d", "padding", "convnext_stage", "global_avgpool", "upsample2d"} and len(shape) != 3:
+        if kind in {"conv2d", "maxpool2d", "padding", "convnext_stage", "upsample2d"} and len(shape) != 3:
             raise ValueError("This layer needs a grid (C × H × W). A feature vector has no spatial axes.")
+        if kind == "global_avgpool" and len(shape) not in {3, 4}:
+            raise ValueError("Global average pooling needs a grid (C × H × W) or grid sequence (T × C × H × W).")
         if kind in {"conv2d", "maxpool2d"}:
             channels, height, width = shape
             kernel = integer(node, "kernel", 3 if kind == "conv2d" else 2, high=256)
@@ -96,9 +105,9 @@ def infer_node(node: GraphNode, incoming: list[list[int]], infos: list[dict] | N
             shape = [prod(shape)]
         elif kind == "layernorm":
             real(node, "eps", 1e-6, 1e-12, 1)
-            params = 2 * (shape[-1] if len(shape) == 2 else shape[0])
+            params = 2 * (shape[1] if len(shape) in {2, 4} else shape[0])
         elif kind == "global_avgpool":
-            shape = [shape[0]]
+            shape = shape[:-2]
         elif kind == "convnext_stage":
             blocks = integer(node, "blocks", 3, high=64)
             kernel = integer(node, "kernel", 7, high=255)
@@ -115,6 +124,8 @@ def infer_node(node: GraphNode, incoming: list[list[int]], infos: list[dict] | N
         if kind in {"conv2d", "dense", "residual"} and p.get("activation", "relu" if kind != "residual" else "none") not in ACTIVATIONS:
             raise ValueError("Choose a supported activation: ReLU, GELU, SiLU, tanh, or none.")
     extra = {}
+    if len(shape) == 4:
+        extra["layout"] = "spatiotemporal"
     if len(infos) == 1 and kind in {"layernorm", "embedding"}:
         extra = {k: infos[0][k] for k in ("grid", "prefix_tokens", "layout") if k in infos[0]}
     if kind == "residual" and infos and infos[0].get("layout") == "streams":

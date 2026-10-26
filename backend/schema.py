@@ -9,6 +9,7 @@ Kind = Literal[
     "padding", "flatten", "concat", "residual", "classification", "regression",
     "convnext_stage", "layernorm", "global_avgpool", "embedding",
     "sequence_input", "token_input", "token_embedding", "patch_embed", "position_encoding",
+    "grid_sequence_input", "rnn", "gru", "lstm", "conv_rnn", "conv_gru", "conv_lstm",
     "attention", "cross_attention", "feedforward", "transformer_block", "token_pool", "token_head",
     "deepseek_stage", "deepseek_vision", "deepseek_bridge", "deepseek_head", "deepseek_draft",
     "activation", "add", "dot", "gather", "globalavgpool2d", "globalmaxpool2d", "upsample2d",

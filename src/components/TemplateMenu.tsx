@@ -28,6 +28,7 @@ export default function TemplateMenu({
     },
   };
   const groups: [string, string[]][] = [
+    ["Recurrent", ["rnn", "gru", "lstm", "conv_rnn", "conv_gru", "conv_lstm"]],
     ["Catan · PPG", ["catan_convnext_small", "catan_original"]],
     [
       "Transformers",

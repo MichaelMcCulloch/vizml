@@ -79,7 +79,13 @@ export const makeConnectionCurve = (
 // Glyphs may enumerate their samples in either direction. Connections always
 // use the same spatial orientation, independent of tensor/token index order.
 function orderedPorts(points: THREE.Vector3[]) {
-  return [...points].sort((a, b) => b.y - a.y || a.z - b.z || a.x - b.x);
+  const minY = Math.min(...points.map(point => point.y));
+  const height = Math.max(...points.map(point => point.y)) - minY;
+  // Symmetric points on a circle can differ by a few floating-point bits.
+  // World-space translation changes those bits; quantized local rows keep
+  // left/right pairs in the same order after moving or resizing a glyph.
+  const row = (point: THREE.Vector3) => height > 0 ? Math.round((point.y - minY) / height * 1e6) : 0;
+  return [...points].sort((a, b) => row(b) - row(a) || a.z - b.z || a.x - b.x);
 }
 
 export function pairConnectionPorts(source: THREE.Vector3[], target: THREE.Vector3[]) {
