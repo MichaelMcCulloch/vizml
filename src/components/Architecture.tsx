@@ -1171,6 +1171,7 @@ export default function Architecture({
 
     const edgeLayer = new THREE.Group();
     scene.add(edgeLayer);
+    const sharedMaterials = new Set<THREE.Material>();
     const disposeBranch = (object: THREE.Object3D) => {
       object.traverse((child) => {
         const item = child as THREE.Mesh;
@@ -1182,7 +1183,7 @@ export default function Architecture({
           : [];
         for (const material of materials) {
           (material as THREE.SpriteMaterial).map?.dispose();
-          material.dispose();
+          if (!sharedMaterials.has(material)) material.dispose();
         }
       });
     };
@@ -1207,19 +1208,20 @@ export default function Architecture({
     };
     const flowMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        uSize: { value: 6 * renderer.getPixelRatio() },
+        uSize: { value: 7 * renderer.getPixelRatio() },
       },
       vertexShader: `
         uniform float uSize;
         attribute vec3 aColor;
         attribute float aOpacity;
+        attribute float aSize;
         varying vec3 vColor;
         varying float vOpacity;
         void main() {
           vColor = aColor;
           vOpacity = aOpacity;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = uSize;
+          gl_PointSize = uSize * aSize;
         }
       `,
       fragmentShader: `
@@ -1227,7 +1229,9 @@ export default function Architecture({
         varying float vOpacity;
         void main() {
           float d = length(gl_PointCoord - vec2(0.5));
-          float alpha = smoothstep(0.5, 0.05, d) * vOpacity;
+          float core = smoothstep(0.42, 0.04, d);
+          float halo = smoothstep(0.5, 0.0, d) * 0.32;
+          float alpha = (core + halo) * vOpacity;
           if (alpha < 0.004) discard;
           gl_FragColor = vec4(vColor, alpha);
         }
@@ -1237,6 +1241,57 @@ export default function Architecture({
       blending:
         theme === "light" ? THREE.NormalBlending : THREE.AdditiveBlending,
     });
+    const ribbonMaterial = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: `
+        attribute vec3 aColor;
+        attribute float aT;
+        attribute float aAcross;
+        varying vec3 vColor;
+        varying float vT;
+        varying float vAcross;
+        void main() {
+          vColor = aColor;
+          vT = aT;
+          vAcross = aAcross;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        varying vec3 vColor;
+        varying float vT;
+        varying float vAcross;
+        void main() {
+          float edge =
+            smoothstep(0.0, 0.22, vAcross) *
+            smoothstep(0.0, 0.22, 1.0 - vAcross);
+          float tips =
+            smoothstep(0.0, 0.07, vT) *
+            smoothstep(0.0, 0.07, 1.0 - vT);
+          float ripple =
+            sin(vT * 16.0 - uTime * 1.45 + sin(vAcross * 6.28318) * 1.1);
+          float swell =
+            sin(vT * 7.0 - uTime * 0.82 + 1.35);
+          float shimmer = 0.5 + 0.28 * ripple + 0.22 * swell;
+          float streak = smoothstep(
+            0.7,
+            1.0,
+            0.5 + 0.5 * sin(vT * 26.0 - uTime * 2.0 + vAcross * 4.0)
+          );
+          vec3 col = vColor * (0.72 + 0.5 * shimmer);
+          float alpha =
+            (0.10 + 0.17 * shimmer + 0.11 * streak) * edge * tips;
+          gl_FragColor = vec4(col, alpha);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending:
+        theme === "light" ? THREE.NormalBlending : THREE.AdditiveBlending,
+    });
+    sharedMaterials.add(ribbonMaterial);
       const makeSpline = (
       start: THREE.Vector3,
       end: THREE.Vector3,
@@ -1349,6 +1404,8 @@ export default function Architecture({
       const bottom = makeSpline(start.bottom, end.bottom, 0.18).getPoints(28);
       const positions: number[] = [];
       const colors: number[] = [];
+      const along: number[] = [];
+      const across: number[] = [];
       const from = new THREE.Color(startColor);
       const to = new THREE.Color(endColor);
       for (let i = 0; i < top.length; i++) {
@@ -1363,6 +1420,8 @@ export default function Architecture({
           tint.g,
           tint.b,
         );
+        along.push(t, t);
+        across.push(0, 1);
       }
       const indices: number[] = [];
       for (let i = 0; i < top.length - 1; i++) {
@@ -1378,22 +1437,19 @@ export default function Architecture({
         new THREE.Float32BufferAttribute(positions, 3),
       );
       geometry.setAttribute(
-        "color",
+        "aColor",
         new THREE.Float32BufferAttribute(colors, 3),
       );
-      geometry.setIndex(indices);
-      group.add(
-        new THREE.Mesh(
-          geometry,
-          new THREE.MeshBasicMaterial({
-            vertexColors: true,
-            transparent: true,
-            opacity: 0.13,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-          }),
-        ),
+      geometry.setAttribute(
+        "aT",
+        new THREE.Float32BufferAttribute(along, 1),
       );
+      geometry.setAttribute(
+        "aAcross",
+        new THREE.Float32BufferAttribute(across, 1),
+      );
+      geometry.setIndex(indices);
+      group.add(new THREE.Mesh(geometry, ribbonMaterial));
     };
 
     const buildEdge = (
@@ -1594,18 +1650,20 @@ export default function Architecture({
       }
       flowParticles.length = 0;
       for (const path of flowPaths.values()) {
-        const count = path.weight > 0.55 ? 2 : 1;
+        const count =
+          path.weight > 0.55 ? 3 : path.weight > 0.28 ? 2 : 1;
         for (let i = 0; i < count; i++)
           flowParticles.push({
             path,
             phase: (path.phase + i * 0.5) % 1,
-            speed: 0.03 + 0.06 * path.weight,
+            speed: 0.045 + 0.085 * path.weight,
           });
       }
       if (!flowParticles.length) return;
       const positions = new Float32Array(flowParticles.length * 3);
       const colors = new Float32Array(flowParticles.length * 3);
       const opacities = new Float32Array(flowParticles.length);
+      const sizes = new Float32Array(flowParticles.length);
       flowParticles.forEach((particle, index) => {
         const tint = particle.path.color.clone();
         tint.lerp(
@@ -1614,6 +1672,7 @@ export default function Architecture({
         );
         if (theme === "dark") tint.multiplyScalar(1.08);
         tint.toArray(colors, index * 3);
+        sizes[index] = 0.8 + 0.85 * particle.path.weight;
       });
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute(
@@ -1625,6 +1684,7 @@ export default function Architecture({
         "aOpacity",
         new THREE.BufferAttribute(opacities, 1),
       );
+      geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
       flowPoints = new THREE.Points(geometry, flowMaterial);
       flowPoints.frustumCulled = false;
       scene.add(flowPoints);
@@ -1653,7 +1713,7 @@ export default function Architecture({
           a.z + (b.z - a.z) * fraction,
         );
         const fade = Math.sin(Math.PI * t) ** 1.25;
-        opacity.setX(index, fade * (0.32 + 0.36 * particle.path.weight));
+        opacity.setX(index, fade * (0.42 + 0.38 * particle.path.weight));
       });
       position.needsUpdate = true;
       opacity.needsUpdate = true;
@@ -1947,6 +2007,7 @@ export default function Architecture({
       frame = requestAnimationFrame(animate);
       if (document.hidden) return;
       controls.update();
+      ribbonMaterial.uniforms.uTime.value = time / 1000;
       updateFlow(time);
       renderer.render(scene, camera);
     };
