@@ -704,6 +704,8 @@ kbd {
 }
 .architecture-panel {
   flex: 1.14;
+  container-type: inline-size;
+  container-name: architecture;
   position: relative;
   min-height: 0;
   display: flex;
@@ -764,6 +766,49 @@ kbd {
 .panel-tools .icon-button {
   width: 25px;
   height: 25px;
+}
+.flow-speed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 3px;
+  color: rgb(var(--tone-7-rgb));
+  font: 10px var(--mono);
+  white-space: nowrap;
+}
+.flow-speed input {
+  width: clamp(48px, 6vw, 88px);
+  height: 16px;
+  margin: 0;
+  accent-color: rgb(var(--accent-rgb));
+  cursor: pointer;
+}
+.flow-speed output {
+  min-width: 4.5ch;
+  color: rgb(var(--tone-8-rgb));
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.flow-speed:focus-within {
+  color: rgb(var(--tone-9-rgb));
+}
+@container architecture (max-width: 580px) {
+  .live-badge {
+    display: none;
+  }
+}
+@container architecture (max-width: 460px) {
+  .flow-speed > span {
+    display: none;
+  }
+  .flow-speed input {
+    width: 48px;
+  }
+}
+@container architecture (max-width: 380px) {
+  .panel-title > span:first-of-type {
+    display: none;
+  }
 }
 .tool-separator {
   height: 13px;

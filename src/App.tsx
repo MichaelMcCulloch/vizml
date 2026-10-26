@@ -7,6 +7,7 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
   useReactFlow,
+  useUpdateNodeInternals,
   type Connection,
   type NodeChange,
   type EdgeChange,
@@ -57,9 +58,11 @@ import {
   type Kind,
   type LayerNode as LayerNodeType,
   type ModelGraph,
+  type NodeAnalysis,
   type Params,
 } from "./model";
 import { download, fileName, useEngine } from "./useEngine";
+import { withNodeMeasurements } from "./graphView";
 
 const nodeTypes = { layer: LayerNode };
 const edgeTypes = { skip: SkipEdge };
@@ -177,6 +180,22 @@ export default function App() {
   }, []);
   const engine = useEngine(graph, notice);
   const { analysis } = engine;
+  const updateNodeInternals = useUpdateNodeInternals();
+  const nodeGeometry = useRef(new Map<string, { data: LayerNodeType["data"]; info: NodeAnalysis | undefined }>());
+  useEffect(() => {
+    const next = new Map<string, { data: LayerNodeType["data"]; info: NodeAnalysis | undefined }>();
+    const changed: string[] = [];
+    for (const node of viewGraph.nodes) {
+      const info = analysis?.nodes[node.id];
+      const previous = nodeGeometry.current.get(node.id);
+      if (!previous || previous.data !== node.data || previous.info !== info) changed.push(node.id);
+      next.set(node.id, { data: node.data, info });
+    }
+    nodeGeometry.current = next;
+    // A reused ID can gain/lose ports without resizing. Refresh after edits
+    // and async shape labels reach the DOM, in one batch instead of per node.
+    if (changed.length) updateNodeInternals(changed);
+  }, [viewGraph.nodes, analysis, updateNodeInternals]);
   const snapshot = useCallback(() => {
     history.current.past.push(cleanGraph(graphRef.current));
     if (history.current.past.length > 70) history.current.past.shift();
@@ -191,8 +210,9 @@ export default function App() {
       )
         snapshot();
       history.current.lastEdit = coalesce ? Date.now() : 0;
-      graphRef.current = next;
-      setGraph(next);
+      const measured = withNodeMeasurements(next, graphRef.current);
+      graphRef.current = measured;
+      setGraph(measured);
     },
     [snapshot],
   );
@@ -390,8 +410,9 @@ export default function App() {
     const previous = history.current.past.pop();
     if (!previous) return;
     history.current.future.push(cleanGraph(graphRef.current));
-    graphRef.current = previous;
-    setGraph(previous);
+    const measured = withNodeMeasurements(previous, graphRef.current);
+    graphRef.current = measured;
+    setGraph(measured);
     setHistoryVersion((v) => v + 1);
     select(null);
   }, [select]);
@@ -399,8 +420,9 @@ export default function App() {
     const next = history.current.future.pop();
     if (!next) return;
     history.current.past.push(cleanGraph(graphRef.current));
-    graphRef.current = next;
-    setGraph(next);
+    const measured = withNodeMeasurements(next, graphRef.current);
+    graphRef.current = measured;
+    setGraph(measured);
     setHistoryVersion((v) => v + 1);
     select(null);
   }, [select]);
@@ -501,10 +523,10 @@ export default function App() {
         : "Example loaded. Your previous graph is available with Undo.",
     );
   };
-  const displayNodes = viewGraph.nodes.map((n) => ({
+  const displayNodes = useMemo(() => viewGraph.nodes.map((n) => ({
     ...n,
     selected: n.id === selected,
-  }));
+  })), [viewGraph.nodes, selected]);
   const displayEdges = viewGraph.edges.map((e) => {
     const target = graph.nodes.find((n) => n.id === e.target);
     const source = graph.nodes.find((n) => n.id === e.source);

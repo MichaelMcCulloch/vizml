@@ -9,6 +9,8 @@ import {
   Minimize2,
   Eye,
   EyeOff,
+  Pause,
+  Play,
   Undo2,
 } from "lucide-react";
 import {
@@ -20,6 +22,19 @@ import {
   type ModelGraph,
 } from "../model";
 import { sequenceGeometry } from "./sequenceGeometry";
+import {
+  connectionExtent,
+  makeConnectionCurve,
+  pairConnectionPorts,
+  spatialConnection,
+} from "./connectionGeometry";
+import {
+  applyFlowAttributes,
+  createFlowMaterial,
+  flowProfile,
+  pathProgress,
+  type FlowAppearance,
+} from "./connectionFlow";
 
 type Props = {
   graph: ModelGraph;
@@ -40,7 +55,17 @@ type SceneAPI = {
 type Offset = [number, number, number];
 
 const LAYOUT_KEY_PREFIX = "vizml:architecture:manual:";
+const FLOW_SPEED_KEY = "vizml:architecture:flow-speed";
 const SNAP_STEP = 2;
+
+function readFlowSpeed() {
+  try {
+    const value = Number(localStorage.getItem(FLOW_SPEED_KEY) ?? 1);
+    return Number.isFinite(value) ? THREE.MathUtils.clamp(value, 0.25, 40) : 1;
+  } catch {
+    return 1;
+  }
+}
 
 function readManualLayout(name: string): Record<string, Offset> {
   try {
@@ -68,53 +93,6 @@ function storeManualLayout(name: string, offsets: Record<string, Offset>) {
     localStorage.setItem(LAYOUT_KEY_PREFIX + name, JSON.stringify(offsets));
   } catch {
     // Layout is a convenience; a full or disabled storage must not break the view.
-  }
-}
-
-class QuinticBezierCurve3 extends THREE.Curve<THREE.Vector3> {
-  constructor(
-    private v0: THREE.Vector3,
-    private v1: THREE.Vector3,
-    private v2: THREE.Vector3,
-    private v3: THREE.Vector3,
-    private v4: THREE.Vector3,
-    private v5: THREE.Vector3,
-  ) {
-    super();
-  }
-
-  getPoint(t: number, target = new THREE.Vector3()) {
-    const m = 1 - t;
-    const b0 = m ** 5;
-    const b1 = 5 * m ** 4 * t;
-    const b2 = 10 * m ** 3 * t ** 2;
-    const b3 = 10 * m ** 2 * t ** 3;
-    const b4 = 5 * m * t ** 4;
-    const b5 = t ** 5;
-    return target
-      .set(0, 0, 0)
-      .addScaledVector(this.v0, b0)
-      .addScaledVector(this.v1, b1)
-      .addScaledVector(this.v2, b2)
-      .addScaledVector(this.v3, b3)
-      .addScaledVector(this.v4, b4)
-      .addScaledVector(this.v5, b5);
-  }
-}
-
-class ArchCurve3 extends THREE.Curve<THREE.Vector3> {
-  constructor(
-    private start: THREE.Vector3,
-    private end: THREE.Vector3,
-    private bow: number,
-  ) {
-    super();
-  }
-
-  getPoint(t: number, target = new THREE.Vector3()) {
-    target.copy(this.start).lerp(this.end, t);
-    target.y += this.bow * Math.sin(Math.PI * t) ** 2;
-    return target;
   }
 }
 
@@ -195,6 +173,10 @@ export default function Architecture({
   const api = useRef<SceneAPI | null>(null);
   const [rotating, setRotating] = useState(false);
   const [labels, setLabels] = useState(true);
+  const [flowing, setFlowing] = useState(
+    () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+  const [flowSpeed, setFlowSpeed] = useState(readFlowSpeed);
   const [failed, setFailed] = useState(false);
   const select = useRef(onSelect);
   select.current = onSelect;
@@ -202,6 +184,12 @@ export default function Architecture({
   rotateValue.current = rotating;
   const labelsValue = useRef(labels);
   labelsValue.current = labels;
+  const flowingValue = useRef(flowing);
+  flowingValue.current = flowing;
+  const flowSpeedValue = useRef(flowSpeed);
+  flowSpeedValue.current = flowSpeed;
+  // Keep the current in place when selecting a layer or rebuilding the scene.
+  const flowTime = useRef(0);
   const cameraView = useRef<{
     position: number[];
     target: number[];
@@ -217,6 +205,21 @@ export default function Architecture({
     shapes: analysis?.nodes,
     selected,
   });
+
+  useEffect(() => {
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setFlowing(!preference.matches);
+    preference.addEventListener("change", update);
+    return () => preference.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FLOW_SPEED_KEY, String(flowSpeed));
+    } catch {
+      // The slider still works when preference storage is unavailable.
+    }
+  }, [flowSpeed]);
 
   useEffect(() => {
     const element = host.current;
@@ -1187,156 +1190,26 @@ export default function Architecture({
         }
       });
     };
-    type FlowPath = {
-      points: THREE.Vector3[];
-      color: THREE.Color;
-      weight: number;
-      phase: number;
-    };
-    const flowPaths = new Map<string, FlowPath>();
-    const flowParticles: {
-      path: FlowPath;
-      phase: number;
-      speed: number;
-    }[] = [];
-    let flowPoints: THREE.Points | null = null;
-    const flowPhase = (key: string) => {
-      let hash = 0;
-      for (let i = 0; i < key.length; i++)
-        hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-      return (hash % 1000) / 1000;
-    };
-    const flowMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        uSize: { value: 7 * renderer.getPixelRatio() },
-      },
-      vertexShader: `
-        uniform float uSize;
-        attribute vec3 aColor;
-        attribute float aOpacity;
-        attribute float aSize;
-        varying vec3 vColor;
-        varying float vOpacity;
-        void main() {
-          vColor = aColor;
-          vOpacity = aOpacity;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = uSize * aSize;
-        }
-      `,
-      fragmentShader: `
-        varying vec3 vColor;
-        varying float vOpacity;
-        void main() {
-          float d = length(gl_PointCoord - vec2(0.5));
-          float core = smoothstep(0.42, 0.04, d);
-          float halo = smoothstep(0.5, 0.0, d) * 0.32;
-          float alpha = (core + halo) * vOpacity;
-          if (alpha < 0.004) discard;
-          gl_FragColor = vec4(vColor, alpha);
-        }
-      `,
-      transparent: true,
-      depthWrite: false,
-      blending:
-        theme === "light" ? THREE.NormalBlending : THREE.AdditiveBlending,
-    });
-    const ribbonMaterial = new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 } },
-      vertexShader: `
-        attribute vec3 aColor;
-        attribute float aT;
-        attribute float aAcross;
-        varying vec3 vColor;
-        varying float vT;
-        varying float vAcross;
-        void main() {
-          vColor = aColor;
-          vT = aT;
-          vAcross = aAcross;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        uniform float uTime;
-        varying vec3 vColor;
-        varying float vT;
-        varying float vAcross;
-        void main() {
-          float edge =
-            smoothstep(0.0, 0.22, vAcross) *
-            smoothstep(0.0, 0.22, 1.0 - vAcross);
-          float tips =
-            smoothstep(0.0, 0.07, vT) *
-            smoothstep(0.0, 0.07, 1.0 - vT);
-          float ripple =
-            sin(vT * 16.0 - uTime * 1.45 + sin(vAcross * 6.28318) * 1.1);
-          float swell =
-            sin(vT * 7.0 - uTime * 0.82 + 1.35);
-          float shimmer = 0.5 + 0.28 * ripple + 0.22 * swell;
-          float streak = smoothstep(
-            0.7,
-            1.0,
-            0.5 + 0.5 * sin(vT * 26.0 - uTime * 2.0 + vAcross * 4.0)
-          );
-          vec3 col = vColor * (0.72 + 0.5 * shimmer);
-          float alpha =
-            (0.10 + 0.17 * shimmer + 0.11 * streak) * edge * tips;
-          gl_FragColor = vec4(col, alpha);
-        }
-      `,
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      blending:
-        theme === "light" ? THREE.NormalBlending : THREE.AdditiveBlending,
-    });
-    sharedMaterials.add(ribbonMaterial);
-      const makeSpline = (
-      start: THREE.Vector3,
-      end: THREE.Vector3,
-      bow = 0,
-    ) => {
-      const forward = end.x - start.x;
-      if (forward <= 0.25)
-        return bow
-          ? new ArchCurve3(start, end, bow)
-          : new THREE.LineCurve3(start, end);
-      const out = Math.min(3, forward * 0.3);
-      const control = start.clone().add(new THREE.Vector3(out, 0, 0));
-      const enter = end.clone().sub(new THREE.Vector3(out, 0, 0));
-      if (bow === 0)
-        return new THREE.CubicBezierCurve3(start, control, enter, end);
-      const liftA = start.clone().lerp(end, 0.35);
-      const liftB = start.clone().lerp(end, 0.65);
-      liftA.y += bow;
-      liftB.y += bow;
-      return new QuinticBezierCurve3(
-        start,
-        control,
-        liftA,
-        liftB,
-        enter,
-        end,
-      );
-    };
+    const flowMaterial = createFlowMaterial(theme);
+    flowMaterial.uniforms.uTime.value = flowTime.current;
+    sharedMaterials.add(flowMaterial);
     const addSpline = (
       group: THREE.Group,
       start: THREE.Vector3,
       end: THREE.Vector3,
-      color: string,
-      opacity: number,
+      appearance: FlowAppearance,
       bow = 0,
     ) => {
-      const curve = makeSpline(start, end, bow);
+      const curve = makeConnectionCurve(start, end, bow);
+      const points = curve.getPoints(40);
       group.add(
         new THREE.Line(
-          new THREE.BufferGeometry().setFromPoints(curve.getPoints(40)),
-          new THREE.LineBasicMaterial({
-            color,
-            transparent: true,
-            opacity,
-          }),
+          applyFlowAttributes(
+            new THREE.BufferGeometry().setFromPoints(points),
+            pathProgress(points).progress,
+            appearance,
+          ),
+          flowMaterial,
         ),
       );
       return curve;
@@ -1344,27 +1217,31 @@ export default function Architecture({
     const addSplineBatch = (
       group: THREE.Group,
       curves: THREE.Vector3[][],
-      color: string,
-      opacity: number,
+      appearance: FlowAppearance,
     ) => {
       const positions: number[] = [];
-      for (const points of curves)
-        for (let i = 1; i < points.length; i++)
+      const along: number[] = [];
+      for (const points of curves) {
+        const { progress } = pathProgress(points);
+        for (let i = 1; i < points.length; i++) {
           positions.push(
             ...points[i - 1].toArray(),
             ...points[i].toArray(),
           );
+          along.push(progress[i - 1], progress[i]);
+        }
+      }
       group.add(
         new THREE.LineSegments(
-          new THREE.BufferGeometry().setAttribute(
-            "position",
-            new THREE.Float32BufferAttribute(positions, 3),
+          applyFlowAttributes(
+            new THREE.BufferGeometry().setAttribute(
+              "position",
+              new THREE.Float32BufferAttribute(positions, 3),
+            ),
+            along,
+            appearance,
           ),
-          new THREE.LineBasicMaterial({
-            color,
-            transparent: true,
-            opacity,
-          }),
+          flowMaterial,
         ),
       );
     };
@@ -1373,54 +1250,27 @@ export default function Architecture({
       group: THREE.Group,
       source: THREE.Vector3[],
       target: THREE.Vector3[],
-      startColor: string,
-      endColor: string,
+      appearance: FlowAppearance,
     ) => {
       if (!source.length || !target.length) return;
-      const extremes = (points: THREE.Vector3[]) => {
-        let top = points[0];
-        let bottom = points[0];
-        for (const point of points) {
-          if (point.y > top.y) top = point;
-          if (point.y < bottom.y) bottom = point;
-        }
-        top = top.clone();
-        bottom = bottom.clone();
-        if (top.y - bottom.y < 0.24) {
-          const middle = (top.y + bottom.y) / 2;
-          top.y = middle + 0.12;
-          bottom.y = middle - 0.12;
-        }
-        return { top, bottom };
-      };
-      const start = extremes(source);
-      const end = extremes(target);
+      const start = connectionExtent(source);
+      const end = connectionExtent(target);
       for (const extent of [start, end]) {
         const middle = extent.top.clone().add(extent.bottom).multiplyScalar(0.5);
         extent.top.lerp(middle, 0.28);
         extent.bottom.lerp(middle, 0.28);
       }
-      const top = makeSpline(start.top, end.top, 0.18).getPoints(28);
-      const bottom = makeSpline(start.bottom, end.bottom, 0.18).getPoints(28);
+      const top = makeConnectionCurve(start.top, end.top, 0.18).getPoints(28);
+      const bottom = makeConnectionCurve(start.bottom, end.bottom, 0.18).getPoints(28);
+      const { progress } = pathProgress(top.map((point, i) =>
+        point.clone().add(bottom[i]).multiplyScalar(0.5),
+      ));
       const positions: number[] = [];
-      const colors: number[] = [];
       const along: number[] = [];
       const across: number[] = [];
-      const from = new THREE.Color(startColor);
-      const to = new THREE.Color(endColor);
       for (let i = 0; i < top.length; i++) {
-        const t = i / (top.length - 1);
-        const tint = from.clone().lerp(to, t);
         positions.push(...top[i].toArray(), ...bottom[i].toArray());
-        colors.push(
-          tint.r,
-          tint.g,
-          tint.b,
-          tint.r,
-          tint.g,
-          tint.b,
-        );
-        along.push(t, t);
+        along.push(progress[i], progress[i]);
         across.push(0, 1);
       }
       const indices: number[] = [];
@@ -1436,20 +1286,9 @@ export default function Architecture({
         "position",
         new THREE.Float32BufferAttribute(positions, 3),
       );
-      geometry.setAttribute(
-        "aColor",
-        new THREE.Float32BufferAttribute(colors, 3),
-      );
-      geometry.setAttribute(
-        "aT",
-        new THREE.Float32BufferAttribute(along, 1),
-      );
-      geometry.setAttribute(
-        "aAcross",
-        new THREE.Float32BufferAttribute(across, 1),
-      );
       geometry.setIndex(indices);
-      group.add(new THREE.Mesh(geometry, ribbonMaterial));
+      applyFlowAttributes(geometry, along, { ...appearance, surface: true }, across);
+      group.add(new THREE.Mesh(geometry, flowMaterial));
     };
 
     const buildEdge = (
@@ -1484,6 +1323,18 @@ export default function Architecture({
       const isContext =
         analysis.nodes[target.id].merge === "query_context" &&
         graph.edges.filter((e) => e.target === target.id)[1]?.id === edge.id;
+      const profile = flowProfile(
+        Math.min(flow(edge.source), flow(edge.target)),
+        key,
+        pathProgress(makeConnectionCurve(aFace, bFace, residual ? 4.2 : isContext ? 3 : 0.18).getPoints(40)).length,
+      );
+      const focus = selected && selected !== edge.source && selected !== edge.target ? 0.65 : 1;
+      const appearance = (opacity: number, tint?: string): FlowAppearance => ({
+        profile,
+        color: tint ?? color,
+        endColor: tint ?? (residual ? color : displayColor(catalog[target.data.kind].color, theme)),
+        opacity: opacity * focus,
+      });
       if (
         analysis.nodes[edge.source].layout === "streams" &&
         analysis.nodes[edge.target].layout === "streams"
@@ -1493,16 +1344,16 @@ export default function Architecture({
           const offset = (lane - 1.5) * 0.9;
           const start = aFace.clone().add(new THREE.Vector3(0.02, 0, offset));
           const end = bFace.clone().add(new THREE.Vector3(-0.02, 0, offset));
-          streamCurves.push(makeSpline(start, end, 0.35).getPoints(24));
+          streamCurves.push(makeConnectionCurve(start, end, 0.35).getPoints(24));
         }
         addSplineBatch(
           group,
           streamCurves,
-          displayColor("#e8a286", theme),
-          0.55,
+          appearance(theme === "light" ? 0.38 : 0.28, displayColor("#e8a286", theme)),
         );
       } else if (isContext) {
-        const curve = addSpline(group, aFace, bFace, displayColor("#ddadd2", theme), 0.75, 3);
+        const curve = addSpline(group, aFace, bFace,
+          appearance(theme === "light" ? 0.48 : 0.38, displayColor("#ddadd2", theme)), 3);
         const label = labelSprite("CONTEXT · K / V", displayColor("#ddadd2", theme), 0.4);
         label.position.copy(curve.getPoint(0.5));
         label.position.y += 0.35;
@@ -1517,33 +1368,29 @@ export default function Architecture({
             group,
             an,
             bn,
-            color,
-            displayColor(catalog[target.data.kind].color, theme),
+            appearance(theme === "light" ? 0.065 : 0.05),
           );
         } else {
-          const pairs: [THREE.Vector3, THREE.Vector3][] = [];
-          for (let i = 0; i < Math.min(an.length, bn.length); i++)
-            pairs.push([an[i], bn[i]]);
+          const pairs = pairConnectionPorts(an, bn);
           addSplineBatch(
             group,
             pairs.map(([start, end]) =>
-              makeSpline(start, end, 0.18).getPoints(20),
+              makeConnectionCurve(start, end, 0.18).getPoints(20),
             ),
-            color,
-            0.2,
+            appearance(theme === "light" ? 0.22 : 0.16),
           );
         }
       } else if (residual) {
-        const curve = makeSpline(aFace, bFace, 4.2);
+        const curve = makeConnectionCurve(aFace, bFace, 4.2);
         const geometry = new THREE.TubeGeometry(curve, 48, 0.025, 6, false);
+        // TubeGeometry samples by arc length; its U coordinate follows the path.
+        const uv = geometry.attributes.uv;
+        const along = Float32Array.from({ length: uv.count }, (_, i) => uv.getX(i));
+        applyFlowAttributes(geometry, along, appearance(theme === "light" ? 0.48 : 0.38));
         group.add(
           new THREE.Mesh(
             geometry,
-            new THREE.MeshBasicMaterial({
-              color,
-              transparent: true,
-              opacity: 0.8,
-            }),
+            flowMaterial,
           ),
         );
         const skipLabel = labelSprite(edge.data?.role === "detail_skip" ? "HIGH-RES DETAIL · CONCAT" : "RESIDUAL STREAM", displayColor("#c99b83", theme), 0.42);
@@ -1555,50 +1402,29 @@ export default function Architecture({
         const sourceShape = analysis.nodes[edge.source].shape,
           targetShape = analysis.nodes[edge.target].shape;
         if (sourceShape.length === 3 && targetShape.length === 3) {
-          const startH = spatialScale(sourceShape[1]) / 2,
-            startW = spatialScale(sourceShape[2]) / 2;
-          const endH = spatialScale(targetShape[1]) / 2,
-            endW = spatialScale(targetShape[2]) / 2;
-          const cornerCurves: THREE.Vector3[][] = [];
-          for (const sy of [-1, 1])
-            for (const sz of [-1, 1])
-              cornerCurves.push(
-                makeSpline(
-                  new THREE.Vector3(
-                    aFace.x,
-                    a.y + sy * startH,
-                    a.z + sz * startW,
-                  ),
-                  new THREE.Vector3(
-                    bFace.x,
-                    b.y + sy * endH,
-                    b.z + sz * endW,
-                  ),
-                  0.15,
-                ).getPoints(24),
-              );
-          addSplineBatch(group, cornerCurves, color, 0.18);
+          const volume = spatialConnection(
+            aFace,
+            bFace,
+            [spatialScale(sourceShape[1]), spatialScale(sourceShape[2])],
+            [spatialScale(targetShape[1]), spatialScale(targetShape[2])],
+          );
+          const { progress } = pathProgress(volume.centerline);
+          applyFlowAttributes(
+            volume.geometry,
+            volume.stations.map(station => progress[station]),
+            { ...appearance(theme === "light" ? 0.045 : 0.035), surface: true },
+            volume.across,
+          );
+          const faceAppearance = volume.geometry.attributes.aAppearance as THREE.BufferAttribute;
+          volume.faceOpacity.forEach((opacity, i) =>
+            faceAppearance.setX(i, faceAppearance.getX(i) * opacity),
+          );
+          group.add(new THREE.Mesh(volume.geometry, flowMaterial));
+          addSplineBatch(group, volume.curves, appearance(theme === "light" ? 0.22 : 0.16));
         } else {
-          addSpline(group, aFace, bFace, color, 0.45, 0.18);
+          addSpline(group, aFace, bFace, appearance(theme === "light" ? 0.38 : 0.26), 0.18);
         }
       }
-      let path = flowPaths.get(key);
-      if (!path) {
-        path = {
-          points: [],
-          color: new THREE.Color(color),
-          weight: 0,
-          phase: flowPhase(key),
-        };
-        flowPaths.set(key, path);
-      }
-      path.points = makeSpline(
-        aFace,
-        bFace,
-        residual ? 4.2 : isContext ? 3 : 0,
-      ).getPoints(40);
-      path.color.set(color);
-      path.weight = Math.min(flow(edge.source), flow(edge.target));
     };
 
     const edgeGroups = new Map<string, THREE.Group>();
@@ -1618,7 +1444,6 @@ export default function Architecture({
       edgeGroups.clear();
       edgeById.clear();
       incidentEdges.clear();
-      flowPaths.clear();
       graph.edges.forEach((edge, index) => {
         const key = edge.id || `edge-${index}`;
         const group = new THREE.Group();
@@ -1642,85 +1467,7 @@ export default function Architecture({
         buildEdge(edge, group, key);
       }
     };
-    const rebuildFlowParticles = () => {
-      if (flowPoints) {
-        scene.remove(flowPoints);
-        flowPoints.geometry.dispose();
-        flowPoints = null;
-      }
-      flowParticles.length = 0;
-      for (const path of flowPaths.values()) {
-        const count =
-          path.weight > 0.55 ? 3 : path.weight > 0.28 ? 2 : 1;
-        for (let i = 0; i < count; i++)
-          flowParticles.push({
-            path,
-            phase: (path.phase + i * 0.5) % 1,
-            speed: 0.045 + 0.085 * path.weight,
-          });
-      }
-      if (!flowParticles.length) return;
-      const positions = new Float32Array(flowParticles.length * 3);
-      const colors = new Float32Array(flowParticles.length * 3);
-      const opacities = new Float32Array(flowParticles.length);
-      const sizes = new Float32Array(flowParticles.length);
-      flowParticles.forEach((particle, index) => {
-        const tint = particle.path.color.clone();
-        tint.lerp(
-          new THREE.Color(theme === "light" ? "#1b2430" : "#ffffff"),
-          0.28 + 0.25 * particle.path.weight,
-        );
-        if (theme === "dark") tint.multiplyScalar(1.08);
-        tint.toArray(colors, index * 3);
-        sizes[index] = 0.8 + 0.85 * particle.path.weight;
-      });
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute(
-        "position",
-        new THREE.BufferAttribute(positions, 3),
-      );
-      geometry.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
-      geometry.setAttribute(
-        "aOpacity",
-        new THREE.BufferAttribute(opacities, 1),
-      );
-      geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
-      flowPoints = new THREE.Points(geometry, flowMaterial);
-      flowPoints.frustumCulled = false;
-      scene.add(flowPoints);
-    };
-    const updateFlow = (time: number) => {
-      if (!flowPoints) return;
-      const position = flowPoints.geometry.attributes.position as THREE.BufferAttribute;
-      const opacity = flowPoints.geometry.attributes.aOpacity as THREE.BufferAttribute;
-      flowParticles.forEach((particle, index) => {
-        const points = particle.path.points;
-        if (points.length < 2) {
-          opacity.setX(index, 0);
-          return;
-        }
-        const t = (particle.phase + (time / 1000) * particle.speed) % 1;
-        const scaled = t * (points.length - 1);
-        const low = Math.floor(scaled);
-        const high = Math.min(points.length - 1, low + 1);
-        const fraction = scaled - low;
-        const a = points[low];
-        const b = points[high];
-        position.setXYZ(
-          index,
-          a.x + (b.x - a.x) * fraction,
-          a.y + (b.y - a.y) * fraction,
-          a.z + (b.z - a.z) * fraction,
-        );
-        const fade = Math.sin(Math.PI * t) ** 1.25;
-        opacity.setX(index, fade * (0.42 + 0.38 * particle.path.weight));
-      });
-      position.needsUpdate = true;
-      opacity.needsUpdate = true;
-    };
     drawEdges();
-    rebuildFlowParticles();
-    updateFlow(performance.now());
 
     const reset = () => {
       camera.position.set(
@@ -1761,8 +1508,6 @@ export default function Architecture({
           if (base) group.position.copy(base);
         }
         drawEdges();
-        rebuildFlowParticles();
-        updateFlow(performance.now());
         setLabelVisibility(labelsValue.current);
         storeManualLayout(graph.name, manual);
         renderer.render(scene, camera);
@@ -2003,12 +1748,15 @@ export default function Architecture({
     element.addEventListener("pointercancel", pointerCancel, true);
     element.addEventListener("dblclick", doubleClick, true);
     let frame = 0;
+    let previousTime: number | null = null;
     const animate = (time: number) => {
       frame = requestAnimationFrame(animate);
+      const delta = previousTime === null ? 0 : Math.min((time - previousTime) / 1000, 0.1);
+      previousTime = time;
       if (document.hidden) return;
       controls.update();
-      ribbonMaterial.uniforms.uTime.value = time / 1000;
-      updateFlow(time);
+      if (flowingValue.current) flowTime.current += delta * flowSpeedValue.current;
+      flowMaterial.uniforms.uTime.value = flowTime.current;
       renderer.render(scene, camera);
     };
     frame = requestAnimationFrame(animate);
@@ -2039,9 +1787,10 @@ export default function Architecture({
           : [];
         for (const material of materials) {
           (material as THREE.SpriteMaterial).map?.dispose();
-          material.dispose();
+          if (!sharedMaterials.has(material)) material.dispose();
         }
       });
+      for (const material of sharedMaterials) material.dispose();
       renderer.dispose();
       renderer.forceContextLoss();
       renderer.domElement.remove();
@@ -2061,6 +1810,29 @@ export default function Architecture({
           </span>
         </div>
         <div className="panel-tools">
+          <button
+            className={`icon-button ${flowing ? "active" : ""}`}
+            onClick={() => setFlowing(!flowing)}
+            title={flowing ? "Pause flow animation" : "Resume flow animation"}
+            aria-label={flowing ? "Pause flow animation" : "Resume flow animation"}
+          >
+            {flowing ? <Pause size={14} /> : <Play size={14} />}
+          </button>
+          <label className="flow-speed" title="Animation speed">
+            <span>Flow</span>
+            <input
+              type="range"
+              min="0.25"
+              max="40"
+              step="0.25"
+              value={flowSpeed}
+              onChange={(event) => setFlowSpeed(Number(event.target.value))}
+              aria-label="Animation speed"
+              aria-valuetext={`${flowSpeed}× speed`}
+            />
+            <output aria-hidden="true">{flowSpeed}×</output>
+          </label>
+          <span className="tool-separator" />
           <button
             className={`icon-button ${labels ? "active" : ""}`}
             onClick={() => {
