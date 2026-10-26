@@ -1186,6 +1186,57 @@ export default function Architecture({
         }
       });
     };
+    type FlowPath = {
+      points: THREE.Vector3[];
+      color: THREE.Color;
+      weight: number;
+      phase: number;
+    };
+    const flowPaths = new Map<string, FlowPath>();
+    const flowParticles: {
+      path: FlowPath;
+      phase: number;
+      speed: number;
+    }[] = [];
+    let flowPoints: THREE.Points | null = null;
+    const flowPhase = (key: string) => {
+      let hash = 0;
+      for (let i = 0; i < key.length; i++)
+        hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+      return (hash % 1000) / 1000;
+    };
+    const flowMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uSize: { value: 6 * renderer.getPixelRatio() },
+      },
+      vertexShader: `
+        uniform float uSize;
+        attribute vec3 aColor;
+        attribute float aOpacity;
+        varying vec3 vColor;
+        varying float vOpacity;
+        void main() {
+          vColor = aColor;
+          vOpacity = aOpacity;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = uSize;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor;
+        varying float vOpacity;
+        void main() {
+          float d = length(gl_PointCoord - vec2(0.5));
+          float alpha = smoothstep(0.5, 0.05, d) * vOpacity;
+          if (alpha < 0.004) discard;
+          gl_FragColor = vec4(vColor, alpha);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending:
+        theme === "light" ? THREE.NormalBlending : THREE.AdditiveBlending,
+    });
       const makeSpline = (
       start: THREE.Vector3,
       end: THREE.Vector3,
@@ -1348,6 +1399,7 @@ export default function Architecture({
     const buildEdge = (
       edge: (typeof graph.edges)[number],
       group: THREE.Group,
+      key: string,
     ) => {
       const a = worldPoint(edge.source),
         b = worldPoint(edge.target);
@@ -1474,6 +1526,23 @@ export default function Architecture({
           addSpline(group, aFace, bFace, color, 0.45, 0.18);
         }
       }
+      let path = flowPaths.get(key);
+      if (!path) {
+        path = {
+          points: [],
+          color: new THREE.Color(color),
+          weight: 0,
+          phase: flowPhase(key),
+        };
+        flowPaths.set(key, path);
+      }
+      path.points = makeSpline(
+        aFace,
+        bFace,
+        residual ? 4.2 : isContext ? 3 : 0,
+      ).getPoints(40);
+      path.color.set(color);
+      path.weight = Math.min(flow(edge.source), flow(edge.target));
     };
 
     const edgeGroups = new Map<string, THREE.Group>();
@@ -1493,6 +1562,7 @@ export default function Architecture({
       edgeGroups.clear();
       edgeById.clear();
       incidentEdges.clear();
+      flowPaths.clear();
       graph.edges.forEach((edge, index) => {
         const key = edge.id || `edge-${index}`;
         const group = new THREE.Group();
@@ -1504,7 +1574,7 @@ export default function Architecture({
           set.add(key);
           incidentEdges.set(node, set);
         }
-        buildEdge(edge, group);
+        buildEdge(edge, group, key);
       });
     };
     const rebuildEdgesFor = (node: string) => {
@@ -1513,10 +1583,84 @@ export default function Architecture({
         const edge = edgeById.get(key);
         if (!group || !edge) continue;
         clearEdgeGroup(group);
-        buildEdge(edge, group);
+        buildEdge(edge, group, key);
       }
     };
+    const rebuildFlowParticles = () => {
+      if (flowPoints) {
+        scene.remove(flowPoints);
+        flowPoints.geometry.dispose();
+        flowPoints = null;
+      }
+      flowParticles.length = 0;
+      for (const path of flowPaths.values()) {
+        const count = path.weight > 0.55 ? 2 : 1;
+        for (let i = 0; i < count; i++)
+          flowParticles.push({
+            path,
+            phase: (path.phase + i * 0.5) % 1,
+            speed: 0.03 + 0.06 * path.weight,
+          });
+      }
+      if (!flowParticles.length) return;
+      const positions = new Float32Array(flowParticles.length * 3);
+      const colors = new Float32Array(flowParticles.length * 3);
+      const opacities = new Float32Array(flowParticles.length);
+      flowParticles.forEach((particle, index) => {
+        const tint = particle.path.color.clone();
+        tint.lerp(
+          new THREE.Color(theme === "light" ? "#1b2430" : "#ffffff"),
+          0.28 + 0.25 * particle.path.weight,
+        );
+        if (theme === "dark") tint.multiplyScalar(1.08);
+        tint.toArray(colors, index * 3);
+      });
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(positions, 3),
+      );
+      geometry.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
+      geometry.setAttribute(
+        "aOpacity",
+        new THREE.BufferAttribute(opacities, 1),
+      );
+      flowPoints = new THREE.Points(geometry, flowMaterial);
+      flowPoints.frustumCulled = false;
+      scene.add(flowPoints);
+    };
+    const updateFlow = (time: number) => {
+      if (!flowPoints) return;
+      const position = flowPoints.geometry.attributes.position as THREE.BufferAttribute;
+      const opacity = flowPoints.geometry.attributes.aOpacity as THREE.BufferAttribute;
+      flowParticles.forEach((particle, index) => {
+        const points = particle.path.points;
+        if (points.length < 2) {
+          opacity.setX(index, 0);
+          return;
+        }
+        const t = (particle.phase + (time / 1000) * particle.speed) % 1;
+        const scaled = t * (points.length - 1);
+        const low = Math.floor(scaled);
+        const high = Math.min(points.length - 1, low + 1);
+        const fraction = scaled - low;
+        const a = points[low];
+        const b = points[high];
+        position.setXYZ(
+          index,
+          a.x + (b.x - a.x) * fraction,
+          a.y + (b.y - a.y) * fraction,
+          a.z + (b.z - a.z) * fraction,
+        );
+        const fade = Math.sin(Math.PI * t) ** 1.25;
+        opacity.setX(index, fade * (0.32 + 0.36 * particle.path.weight));
+      });
+      position.needsUpdate = true;
+      opacity.needsUpdate = true;
+    };
     drawEdges();
+    rebuildFlowParticles();
+    updateFlow(performance.now());
 
     const reset = () => {
       camera.position.set(
@@ -1557,6 +1701,8 @@ export default function Architecture({
           if (base) group.position.copy(base);
         }
         drawEdges();
+        rebuildFlowParticles();
+        updateFlow(performance.now());
         setLabelVisibility(labelsValue.current);
         storeManualLayout(graph.name, manual);
         renderer.render(scene, camera);
@@ -1606,8 +1752,6 @@ export default function Architecture({
     const observer = new ResizeObserver(resize);
     observer.observe(element);
     resize();
-    const renderOnChange = () => renderer.render(scene, camera);
-    controls.addEventListener("change", renderOnChange);
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     const setPointer = (event: { clientX: number; clientY: number }) => {
@@ -1645,7 +1789,6 @@ export default function Architecture({
         const id = edgeDirty;
         edgeDirty = null;
         if (id) rebuildEdgesFor(id);
-        renderer.render(scene, camera);
       });
     };
     const coordinate = (value: number) =>
@@ -1800,10 +1943,12 @@ export default function Architecture({
     element.addEventListener("pointercancel", pointerCancel, true);
     element.addEventListener("dblclick", doubleClick, true);
     let frame = 0;
-    const animate = () => {
+    const animate = (time: number) => {
       frame = requestAnimationFrame(animate);
       if (document.hidden) return;
       controls.update();
+      updateFlow(time);
+      renderer.render(scene, camera);
     };
     frame = requestAnimationFrame(animate);
     return () => {
@@ -1816,7 +1961,6 @@ export default function Architecture({
       cancelAnimationFrame(frame);
       cancelAnimationFrame(edgeFrame);
       observer.disconnect();
-      controls.removeEventListener("change", renderOnChange);
       controls.dispose();
       element.removeEventListener("pointerdown", pointerDown, true);
       element.removeEventListener("pointermove", pointerMove, true);
