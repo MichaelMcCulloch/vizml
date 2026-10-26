@@ -4,24 +4,24 @@ A local visual architecture workbench for deep learning. Compose a directed grap
 
 ## Run
 
-Requires Node.js 22+ and [uv](https://docs.astral.sh/uv/). uv selects Python 3.12–3.13 and installs it if needed.
+Requires [Bun 1.4.4+](https://bun.sh/) and [uv](https://docs.astral.sh/uv/). uv selects Python 3.12–3.13 and installs it if needed.
 
 ```sh
-npm install
+bun install
 uv sync --python 3.12
-npm run dev
+bun run dev
 ```
 
-Open [localhost:5173](http://localhost:5173). The frontend proxies `/ws` and `/api` to FastAPI on port 8000. Keep the development process running while using the app. Graphs are autosaved in your browser. Imported checkpoints are retained locally in `.vizml/checkpoints/`; no account or database is required.
+Open [localhost:5173](http://localhost:5173). Bun serves and hot-reloads the React UI directly from the HTML entrypoint and streams `/api` and `/ws` to the FastAPI/PyTorch engine on port 8000. Vite and Node.js are not required. Keep the development process running while using the app. Graphs are autosaved in your browser. Imported checkpoints are retained locally in `.vizml/checkpoints/`; no account or database is required.
 
-For one local server with built assets:
+For built assets served by Bun (with the Python engine started alongside it):
 
 ```sh
-npm run build
-uv run uvicorn backend.main:app --host 127.0.0.1 --port 8000
+bun run build
+bun run start
 ```
 
-Then open [localhost:8000](http://localhost:8000).
+Then open [localhost:5173](http://localhost:5173). Port 8000 is the Python API; its root redirects to the Bun UI. The development and production launchers shut down the engine on exit. Use `PORT` for a different UI port or `VIZML_ENGINE_PORT` for a different engine port. For separate processes, use `bun run dev:backend` and `bun run dev:frontend` (or `bun run preview` for built files); the standalone Bun server accepts `VIZML_ENGINE_URL`.
 
 ## Workbench
 
@@ -155,7 +155,7 @@ Imports use `torch.load(weights_only=True)` and FakeTensorMode for metadata insp
 ## Architecture
 
 ```text
-React + React Flow  ── graph.changed ──► FastAPI WebSocket
+React + React Flow  ── graph.changed ──► Bun WebSocket proxy ──► FastAPI
      │                                      │
      │                               Pure shape inference
      │                                      │
@@ -169,13 +169,17 @@ model.export  ──► Standalone PyTorch source
 
 The backend owns shape inference. Editor movements stay local. Semantic changes are debounced and tagged with request IDs; stale responses are ignored. The socket reconnects automatically and resubmits the latest graph. JSON imports are bounded to 300 layers, 2,000 edges, and 2 MB.
 
+Bun serves the UI and proxies binary HTTP and graph WebSocket traffic; Python continues to own model inference and checkpoint processing. Runtime entrypoints are `scripts/dev.ts` and `scripts/server.ts`; `scripts/build.ts` bundles production HTML/CSS/JS with Bun.
+
+The checked-in Bun patch for React Flow schedules resize measurements on animation frames, avoiding ResizeObserver feedback loops during panel resizing.
+
 Main modules: `backend/graph.py` and `backend/attention.py` for shape inference, `backend/deepseek.py` for reference analysis, `backend/builder.py` and `backend/torch_attention.py` for PyTorch, `backend/main.py` for transport, `src/model.ts` for graph types/catalog/examples, and `src/components/Architecture.tsx` for the independent renderer. New blocks extend the schema, inference, builder, catalog, inspector, and renderer as appropriate.
 
 ## Verify
 
 ```sh
-npm run build
-npm test
+bun run build
+bun run test
 ```
 
 Tests cover analytical shapes against real PyTorch execution, mixed-branch concatenation, residual compatibility, dilation/groups/padding/pooling, zero and maximum inputs, logits/one-hot/regression semantics, malformed/cyclic graphs, export, and WebSocket error recovery. Sequence tests compare attention numerically with PyTorch, enforce causal isolation from future tokens, exercise cross-attention with different context sizes, check 2D RoPE metadata through residuals, and verify all portable transformer templates. Node tests cover template round trips and expanded decoder context wiring.
@@ -183,3 +187,5 @@ Tests cover analytical shapes against real PyTorch execution, mixed-branch conca
 ## Roadmap
 
 More attention variants, executable specialized MoE/sparse architectures, symbolic shape constraints, and `.safetensors` interchange. Current interchange supports graph JSON, generated Python source, and `.pt` architecture/checkpoint/state_dict files.
+
+Bun integration tests exercise development/production HTML serving, binary request/download forwarding, WebSocket greeting and event ordering, and engine failures.

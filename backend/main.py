@@ -1,12 +1,12 @@
 import asyncio
 import json
 import tempfile
+import os
 from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, ValidationError
 
 from .builder import compile_meta, export_python
@@ -129,14 +129,6 @@ async def graph_events(socket: WebSocket):
         pass
 
 
-DIST = Path(__file__).resolve().parent.parent / "dist"
-if DIST.is_dir():
-    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
-
-    @app.get("/")
-    async def frontend():
-        return FileResponse(DIST / "index.html")
-
-    @app.get("/favicon.svg")
-    async def favicon():
-        return FileResponse(DIST / "favicon.svg")
+@app.get("/")
+async def frontend():
+    return RedirectResponse(os.environ.get("VIZML_APP_URL", "http://127.0.0.1:5173/"))

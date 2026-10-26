@@ -1,0 +1,106 @@
+diff --git a/dist/esm/index.js b/dist/esm/index.js
+index 422889fc98ea26cf4c4b45d6d7b84479550f4728..d24af0c0030d9b6efb8af00e74b884fd13b2719a 100644
+--- a/dist/esm/index.js
++++ b/dist/esm/index.js
+@@ -1280,9 +1280,14 @@ function useResizeHandler(domNode) {
+         if (domNode.current) {
+             updateDimensions();
+             window.addEventListener('resize', updateDimensions);
+-            const resizeObserver = new ResizeObserver(() => updateDimensions());
++            let resizeFrame = 0;
++            const resizeObserver = new ResizeObserver(() => {
++                cancelAnimationFrame(resizeFrame);
++                resizeFrame = requestAnimationFrame(updateDimensions);
++            });
+             resizeObserver.observe(domNode.current);
+             return () => {
++                cancelAnimationFrame(resizeFrame);
+                 window.removeEventListener('resize', updateDimensions);
+                 if (resizeObserver && domNode.current) {
+                     resizeObserver.unobserve(domNode.current);
+@@ -2150,8 +2155,9 @@ function useResizeObserver() {
+         if (typeof ResizeObserver === 'undefined') {
+             return null;
+         }
+-        return new ResizeObserver((entries) => {
+-            const updates = new Map();
++        const updates = new Map();
++        let resizeFrame = 0;
++        const observer = new ResizeObserver((entries) => {
+             entries.forEach((entry) => {
+                 const id = entry.target.getAttribute('data-id');
+                 updates.set(id, {
+@@ -2160,8 +2166,19 @@ function useResizeObserver() {
+                     force: true,
+                 });
+             });
+-            updateNodeInternals(updates);
++            cancelAnimationFrame(resizeFrame);
++            resizeFrame = requestAnimationFrame(() => {
++                updateNodeInternals(updates);
++                updates.clear();
++            });
+         });
++        const disconnect = observer.disconnect.bind(observer);
++        observer.disconnect = () => {
++            cancelAnimationFrame(resizeFrame);
++            updates.clear();
++            disconnect();
++        };
++        return observer;
+     });
+     useEffect(() => {
+         return () => {
+diff --git a/dist/esm/index.mjs b/dist/esm/index.mjs
+index 422889fc98ea26cf4c4b45d6d7b84479550f4728..d24af0c0030d9b6efb8af00e74b884fd13b2719a 100644
+--- a/dist/esm/index.mjs
++++ b/dist/esm/index.mjs
+@@ -1280,9 +1280,14 @@ function useResizeHandler(domNode) {
+         if (domNode.current) {
+             updateDimensions();
+             window.addEventListener('resize', updateDimensions);
+-            const resizeObserver = new ResizeObserver(() => updateDimensions());
++            let resizeFrame = 0;
++            const resizeObserver = new ResizeObserver(() => {
++                cancelAnimationFrame(resizeFrame);
++                resizeFrame = requestAnimationFrame(updateDimensions);
++            });
+             resizeObserver.observe(domNode.current);
+             return () => {
++                cancelAnimationFrame(resizeFrame);
+                 window.removeEventListener('resize', updateDimensions);
+                 if (resizeObserver && domNode.current) {
+                     resizeObserver.unobserve(domNode.current);
+@@ -2150,8 +2155,9 @@ function useResizeObserver() {
+         if (typeof ResizeObserver === 'undefined') {
+             return null;
+         }
+-        return new ResizeObserver((entries) => {
+-            const updates = new Map();
++        const updates = new Map();
++        let resizeFrame = 0;
++        const observer = new ResizeObserver((entries) => {
+             entries.forEach((entry) => {
+                 const id = entry.target.getAttribute('data-id');
+                 updates.set(id, {
+@@ -2160,8 +2166,19 @@ function useResizeObserver() {
+                     force: true,
+                 });
+             });
+-            updateNodeInternals(updates);
++            cancelAnimationFrame(resizeFrame);
++            resizeFrame = requestAnimationFrame(() => {
++                updateNodeInternals(updates);
++                updates.clear();
++            });
+         });
++        const disconnect = observer.disconnect.bind(observer);
++        observer.disconnect = () => {
++            cancelAnimationFrame(resizeFrame);
++            updates.clear();
++            disconnect();
++        };
++        return observer;
+     });
+     useEffect(() => {
+         return () => {
