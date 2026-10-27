@@ -1,10 +1,34 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileSearch, X, ArrowRight, Search } from "lucide-react";
-import { catalog, formatNumber, shapeText, type Analysis, type LayerNode, type ModelGraph } from "../model";
+import { catalog, formatNumber, shapeText, type Analysis, type LayerNode, type ModelGraph, type Params } from "../model";
+import { formatDeclaredShape, parseDeclaredShape } from "../schematicEditing";
 
 function Detail({ title, value }: { title: string; value: unknown }) {
   if (value == null) return null;
   return <details className="snapshot-detail"><summary>{title}</summary><pre>{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</pre></details>;
+}
+
+function ParameterField({ name, value, onChange, disabled = false, validate }: { name: string; value: unknown; onChange: (value: string | number | boolean) => void; disabled?: boolean; validate?: (value: number) => boolean }) {
+  const [draft, setDraft] = useState(String(value));
+  const [invalid, setInvalid] = useState(false);
+  useEffect(() => { setDraft(String(value)); setInvalid(false); }, [value]);
+  const label = name.replaceAll("_", " ").replace(/([a-z])([A-Z])/g, "$1 $2");
+  if (typeof value === "boolean") return <label className="schematic-toggle"><input type="checkbox" checked={value} disabled={disabled} onChange={e => onChange(e.target.checked)} /> <span>{label}</span></label>;
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  const commit = () => {
+    if (typeof value === "number") {
+      const number = Number(draft);
+      if (!draft.trim() || !Number.isFinite(number) || (validate && !validate(number))) { setInvalid(true); return; }
+      setInvalid(false);
+      if (number !== value) onChange(number);
+    } else {
+      setInvalid(false);
+      if (draft !== value) onChange(draft);
+    }
+  };
+  return <label className="parameter-field schematic-parameter"><span>{label}</span><input className="text-field" type={typeof value === "number" ? "number" : "text"} step="any" value={draft}
+    aria-invalid={invalid} disabled={disabled} onChange={e => { setDraft(e.target.value); setInvalid(false); }} onBlur={commit} onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+    {invalid && <small role="alert">{validate ? "Enter a nonnegative whole number." : "Enter a valid number."}</small>}</label>;
 }
 
 export default function SchematicInspector({ node, graph, analysis, onSelect, overview, onUpdate, onDelete, onDuplicate, onDisconnect }: {
@@ -15,30 +39,61 @@ export default function SchematicInspector({ node, graph, analysis, onSelect, ov
   const [search, setSearch] = useState("");
   const [shape, setShape] = useState("");
   const [settings, setSettings] = useState("");
-  const [error, setError] = useState("");
+  const [shapeError, setShapeError] = useState("");
+  const [settingsError, setSettingsError] = useState("");
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  type Draft = { text: string; baseline: string; error: string };
+  const shapeDrafts = useRef(new Map<string, Draft>());
+  const settingsDrafts = useRef(new Map<string, Draft>());
+  const draftKey = node ? JSON.stringify([graph.name, graph.template ?? "", node.id]) : "";
+  const shapeBaseline = JSON.stringify(node?.data.output_shape ?? []);
+  const settingsBaseline = JSON.stringify(node?.data.params ?? {});
   useEffect(() => {
-    setShape(JSON.stringify(node?.data.output_shape ?? []));
-    setSettings(JSON.stringify(node?.data.params ?? {}, null, 2));
-    setError("");
-  }, [node?.id, node?.data.output_shape, node?.data.params]);
+    const draft = shapeDrafts.current.get(draftKey);
+    setShape(draft?.text ?? formatDeclaredShape(node?.data.output_shape));
+    setShapeError(draft?.error ?? "");
+  }, [draftKey, shapeBaseline]);
+  useEffect(() => {
+    const draft = settingsDrafts.current.get(draftKey);
+    setSettings(draft?.text ?? JSON.stringify(node?.data.params ?? {}, null, 2));
+    setSettingsDirty(!!draft); setSettingsError(draft?.error ?? "");
+  }, [draftKey]);
+  useEffect(() => {
+    if (!settingsDrafts.current.has(draftKey)) setSettings(JSON.stringify(node?.data.params ?? {}, null, 2));
+  }, [draftKey, settingsBaseline, settingsDirty]);
   const saveShape = () => {
     if (!node) return;
+    const draft = shapeDrafts.current.get(draftKey);
     try {
-      const value = JSON.parse(shape);
-      if (!Array.isArray(value) || !value.length || value.length > 6 || value.some(x => !(typeof x === "string" && x.length > 0 && x.length <= 40) && !(Number.isSafeInteger(x) && x >= 0))) throw Error();
+      if (draft && draft.baseline !== shapeBaseline)
+        throw new Error("The saved shape changed while you were editing. Discard the draft or copy it before continuing.");
+      const value = parseDeclaredShape(shape);
+      shapeDrafts.current.delete(draftKey);
       if (JSON.stringify(value) !== JSON.stringify(node.data.output_shape) || node.data.declaration_pending === true)
         onUpdate(node.id, { output_shape: value, declaration_pending: false });
-      setError("");
-    } catch { setError('Use a JSON shape such as ["B", 32] or ["B", "L", 64].'); }
+      setShape(formatDeclaredShape(value)); setShapeError("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Enter a valid shape.";
+      shapeDrafts.current.set(draftKey, { text: shape, baseline: draft?.baseline ?? shapeBaseline, error: message });
+      setShapeError(message);
+    }
   };
   const saveSettings = () => {
     if (!node) return;
+    const draft = settingsDrafts.current.get(draftKey);
     try {
+      if (draft && draft.baseline !== settingsBaseline)
+        throw new Error("Settings changed while you were editing. Discard the draft or copy it before continuing.");
       const value = JSON.parse(settings);
-      if (!value || typeof value !== "object" || Array.isArray(value)) throw Error();
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Operation settings must be a JSON object.");
+      settingsDrafts.current.delete(draftKey);
       if (JSON.stringify(value) !== JSON.stringify(node.data.params)) onUpdate(node.id, { params: value });
-      setError("");
-    } catch { setError("Operation settings must be a JSON object."); }
+      setSettingsDirty(false); setSettingsError("");
+    } catch (error) {
+      const message = error instanceof SyntaxError ? "Operation settings must be a JSON object." : error instanceof Error ? error.message : "Operation settings must be a JSON object.";
+      settingsDrafts.current.set(draftKey, { text: settings, baseline: draft?.baseline ?? settingsBaseline, error: message });
+      setSettingsError(message);
+    }
   };
   const data = node?.data;
   const meta = graph.metadata ?? {};
@@ -76,20 +131,31 @@ export default function SchematicInspector({ node, graph, analysis, onSelect, ov
           <h4>Edit declaration</h4>
           <label className="field-label" htmlFor="schematic-name">Name</label>
           <input id="schematic-name" className="text-field" maxLength={100} value={node.data.label} onChange={e => onUpdate(node.id, { label: e.target.value || "Layer" })} />
-          <label className="field-label" htmlFor="schematic-shape">Declared output shape · JSON</label>
-          <input id="schematic-shape" className="text-field" value={shape} onChange={e => setShape(e.target.value)} onBlur={saveShape} />
-          <label className="field-label" htmlFor="schematic-parameters">Declared parameter count</label>
-          <input id="schematic-parameters" className="text-field" type="number" min={0} max={Number.MAX_SAFE_INTEGER} value={Number(data.parameter_count ?? 0)} onChange={e => { if (Number.isSafeInteger(e.target.valueAsNumber) && e.target.valueAsNumber >= 0) onUpdate(node.id, { parameter_count: e.target.valueAsNumber }); }} />
-          <label className="field-label" htmlFor="schematic-settings">Operation settings · JSON</label>
-          <textarea id="schematic-settings" className="text-field" rows={5} value={settings} onChange={e => setSettings(e.target.value)} onBlur={saveSettings} />
-          {error && <p className="schematic-error" role="alert">{error}</p>}
+          <label className="field-label" htmlFor="schematic-shape">Declared output shape</label>
+          <input id="schematic-shape" className="text-field" value={shape} placeholder="B × L × 64" aria-invalid={!!shapeError} onChange={e => { const text = e.target.value; const draft = shapeDrafts.current.get(draftKey); shapeDrafts.current.set(draftKey, { text, baseline: draft?.baseline ?? shapeBaseline, error: "" }); setShape(text); setShapeError(""); }} onBlur={saveShape} onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+          <small className="schematic-field-hint">Separate dimensions with × or commas. Symbols such as B and L are allowed.</small>
+          {shapeError && <><p className="schematic-error" role="alert">{shapeError}</p><button className="quiet-button" onClick={() => { shapeDrafts.current.delete(draftKey); setShape(formatDeclaredShape(node.data.output_shape)); setShapeError(""); }}>Discard shape draft</button></>}
+          <ParameterField key={`${node.id}:parameter-count`} name="Declared parameter count" value={Number(data.parameter_count ?? 0)}
+            validate={value => Number.isSafeInteger(value) && value >= 0} onChange={value => onUpdate(node.id, { parameter_count: value })} />
+          <label className="field-label" htmlFor="schematic-description">Description</label>
+          <textarea id="schematic-description" className="text-field" rows={3} value={typeof data.description === "string" ? data.description : ""} onChange={e => onUpdate(node.id, { description: e.target.value })} />
+          <div className="schematic-settings-heading">Operation settings</div>
+          {settingsDirty && <p className="context-note" role="status">An advanced settings draft is waiting below. Apply or discard it to edit individual fields.</p>}
+          {Object.entries(data.params).map(([key, value]) => <ParameterField key={`${node.id}:${key}`} name={key} value={value} disabled={settingsDirty} onChange={value => onUpdate(node.id, { params: { ...node.data.params, [key]: value } as Params })} />)}
+          <details className="snapshot-detail schematic-advanced"><summary>Advanced settings · JSON</summary>
+            <label className="field-label" htmlFor="schematic-settings">All operation settings</label>
+            <textarea id="schematic-settings" className="text-field" rows={5} value={settings} onChange={e => { const text = e.target.value; const draft = settingsDrafts.current.get(draftKey); settingsDrafts.current.set(draftKey, { text, baseline: draft?.baseline ?? settingsBaseline, error: "" }); setSettings(text); setSettingsDirty(true); setSettingsError(""); }} />
+            {settingsDirty && <div className="schematic-actions"><button className="quiet-button" onClick={() => { settingsDrafts.current.delete(draftKey); setSettings(JSON.stringify(node.data.params, null, 2)); setSettingsDirty(false); setSettingsError(""); }}>Discard changes</button><button className="quiet-button" onClick={saveSettings}>Apply settings</button></div>}
+            {settingsError && <p className="schematic-error" role="alert">{settingsError}</p>}
+            <small className="schematic-field-hint">Drafts stay here when you switch blocks, but are not saved to the project until applied. Apply or discard before changing individual fields.</small>
+          </details>
+          {(analysis?.errors ?? []).filter(issue => issue.node_id === node.id).map((issue, index) => <p className="schematic-error" role="alert" key={index}>{issue.message}</p>)}
           {data.declaration_pending === true && <p className="context-note">Placeholder shape and count: review and save the declared shape.</p>}
           <p className="context-note">These are editable declarations. The original operation is not executed or verified.</p>
           <div className="schematic-actions"><button className="quiet-button" onClick={() => onDuplicate(node.id)}>Duplicate</button><button className="quiet-button" onClick={() => onDelete(node.id)}>Delete block</button></div>
         </div>
         <div className="snapshot-section snapshot-metrics"><span>{proposal ? "Output shape" : "Declared output"}<strong>{shapeText(analysis?.nodes[node.id]?.display_shape ?? data.output_shape as (number | string)[])}</strong></span><span>Owned parameters<strong>{Number(data.parameter_count).toLocaleString()}</strong></span></div>
         <div className="snapshot-section">
-          <Detail title="Operation settings" value={data.params} />
           <Detail title="Pre-operations bundled into this node" value={data.pre_operations} />
           <Detail title="Module paths" value={data.module_paths} />
           <Detail title="Owned parameter tensors" value={data.parameter_tensors} />

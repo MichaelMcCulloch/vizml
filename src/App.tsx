@@ -384,7 +384,7 @@ export default function App() {
   const updateSchematicNode = (id: string, patch: Partial<LayerNodeType["data"]>) => {
     const current = graphRef.current;
     const next = { ...current, nodes: current.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, ...patch } } : n) };
-    commit(Object.keys(patch).every(key => key === "label") ? next : editedSchematic(next), true, true);
+    commit(Object.keys(patch).every(key => key === "label" || key === "description") ? next : editedSchematic(next), true, true);
   };
   const projectResidual = (id: string) => {
     if (engine.checking) {

@@ -10,7 +10,7 @@
     "dev:backend": "uv run uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload",
     "build": "tsc -b && bun scripts/build.ts",
     "preview": "bun scripts/server.ts --production",
-    "test": "bun test scripts && uv run pytest backend/tests -q"
+    "test": "bun test scripts && bun test tests_ui && uv run pytest backend/tests -q"
   },
   "dependencies": {
     "@xyflow/react": "^12.9.0",
@@ -20,11 +20,13 @@
     "three": "^0.180.0"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^21.0.4",
+    "@testing-library/react": "^16.3.3",
+    "@types/bun": "^1.4.4",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/three": "^0.180.0",
-    "typescript": "^5.9.0",
-    "@types/bun": "^1.4.4"
+    "typescript": "^5.9.0"
   },
   "packageManager": "bun@1.4.4",
   "engines": {

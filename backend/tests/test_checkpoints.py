@@ -191,3 +191,10 @@ def test_edited_schematic_preserves_source_metadata_without_claiming_original_to
     assert result["parameters"] == 9
     assert any("original snapshot" in issue["message"] for issue in result["warnings"])
     assert any("placeholder" in issue["message"] for issue in result["warnings"])
+
+
+def test_schematic_descriptions_do_not_change_checkpoint_signature():
+    graph = Graph.model_validate(schematic())
+    before = cp.signature(graph)
+    graph.nodes[1].data.description = "A clearer description of the same operation"
+    assert cp.signature(graph) == before

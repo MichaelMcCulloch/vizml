@@ -2943,3 +2943,11 @@ kbd {
 .project-save-state { color: rgb(var(--tone-7-rgb)); font: 10px var(--mono); white-space: nowrap; }
 .template-save-current { padding: 8px; border-bottom: 1px solid rgb(var(--tone-3-rgb)); }
 .template-save-current .text-field { width: 100%; margin-top: 6px; }
+.schematic-field-hint { display: block; color: rgb(var(--tone-7-rgb)); font-size: 10px; line-height: 1.5; margin-top: 5px; }
+.schematic-settings-heading { color: rgb(var(--tone-8-rgb)); font: 10px var(--mono); margin-top: 18px; }
+.schematic-parameter { display: block; margin-top: 10px; }
+.schematic-parameter span { text-transform: capitalize; }
+.schematic-parameter .text-field { width: 100%; margin-top: 5px; }
+.schematic-parameter small { color: rgb(var(--danger-rgb)); }
+.schematic-toggle { display: flex; align-items: center; gap: 7px; color: rgb(var(--tone-8-rgb)); font-size: 11px; margin-top: 10px; text-transform: capitalize; }
+.schematic-advanced { margin-top: 12px; }

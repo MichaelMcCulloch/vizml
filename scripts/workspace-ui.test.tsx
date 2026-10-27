@@ -7,7 +7,7 @@ import TemplateMenu from "../src/components/TemplateMenu";
 import { parseGraph } from "../src/model";
 
 const graph = parseGraph(JSON.stringify({ version: 1, name: "Editable schematic", mode: "schematic", nodes: [
-  { id: "a", position: { x: 0, y: 0 }, data: { kind: "gather", label: "Gather", params: {}, output_shape: ["B", 4], parameter_count: 0 } },
+  { id: "a", position: { x: 0, y: 0 }, data: { kind: "gather", label: "Gather", params: { input_channels: 32, bias: true, nested: [1, 2] }, output_shape: ["B", 4], parameter_count: 0 } },
 ], edges: [] }));
 const noop = () => {};
 
@@ -23,6 +23,10 @@ test("schematic inspector exposes editable declaration and deletion", () => {
   expect(markup).toContain("Declared output shape");
   expect(markup).toContain("Declared parameter count");
   expect(markup).toContain("Operation settings");
+  expect(markup).toContain("input channels");
+  expect(markup).toContain('type="checkbox"');
+  expect(markup).toContain("Advanced settings");
+  expect(markup).toContain("Separate dimensions with × or commas");
   expect(markup).toContain("Delete block");
 });
 test("project control is available from the top bar", () => {
