@@ -12,7 +12,7 @@ export function startServer(options: ServerOptions = {}) {
   const dist = resolve(options.dist ?? resolve(root, "dist"));
   const production = options.production ?? false;
   return Bun.serve({
-    hostname: options.hostname ?? "127.0.0.1",
+    hostname: options.hostname ?? process.env.HOST ?? "127.0.0.1",
     port: options.port ?? Number(process.env.PORT ?? 5173),
     development: production ? false : { hmr: true, console: false },
     maxRequestBodySize: UPLOAD_LIMIT,

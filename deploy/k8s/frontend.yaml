@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vizml-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: vizml-frontend }
+  template:
+    metadata:
+      labels: { app: vizml-frontend }
+    spec:
+      imagePullSecrets: [{ name: regcred }]
+      containers:
+        - name: frontend
+          image: registry.semanticallyinvalid.net/michaelmcculloch/vizml/frontend:latest
+          env:
+            - { name: VIZML_ENGINE_URL, value: "http://vizml-engine:8000" }
+          ports: [{ containerPort: 5173 }]
+          readinessProbe:
+            httpGet: { path: /, port: 5173 }
+          livenessProbe:
+            httpGet: { path: /, port: 5173 }
+            initialDelaySeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: vizml-frontend }
+spec:
+  selector: { app: vizml-frontend }
+  ports: [{ port: 80, targetPort: 5173 }]
