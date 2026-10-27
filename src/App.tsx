@@ -65,6 +65,7 @@ import {
 } from "./model";
 import { download, fileName, useEngine } from "./useEngine";
 import { withNodeMeasurements } from "./graphView";
+import { useProjectBaseline } from "./useProjectBaseline";
 
 const nodeTypes = { layer: LayerNode };
 const edgeTypes = { skip: SkipEdge };
@@ -138,14 +139,14 @@ export default function App() {
   });
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
-  const [projectBaseline, setProjectBaseline] = useState<string | null>(null);
+  const { baseline: projectBaseline, status: baselineStatus, clear: clearProjectBaseline, saved: markProjectSaved } = useProjectBaseline(projectId);
   const projectGraph = useMemo(() => projectId ? JSON.stringify(cleanGraph(graph)) : null, [projectId, graph]);
   const changeProjectId = useCallback((id: string | null) => {
-    if (projectIdRef.current !== id) setProjectBaseline(null);
+    if (projectIdRef.current !== id) clearProjectBaseline();
     projectIdRef.current = id;
     setProjectId(id);
     try { if (id) localStorage.setItem("vizml.project.id", id); else localStorage.removeItem("vizml.project.id"); } catch { /* workspace still works for this session */ }
-  }, []);
+  }, [clearProjectBaseline]);
   const [, setHistoryVersion] = useState(0);
   const history = useRef<{
     past: { graph: ModelGraph; projectId: string | null }[];
@@ -667,7 +668,7 @@ export default function App() {
           >
             {saved ? <Check size={12} /> : <span className="saving-dot" />}
           </span>
-          {projectId && <span className="project-save-state" title="Browser autosave and the saved project are separate">{projectBaseline === null ? "Project open" : projectGraph === projectBaseline ? "Project saved" : "Unsaved changes"}</span>}
+          {projectId && <span className="project-save-state" title="Browser autosave and the saved project are separate">{baselineStatus === "checking" ? "Checking project" : baselineStatus === "unavailable" ? "Project status unavailable" : projectGraph === projectBaseline ? "Project saved" : "Unsaved changes"}</span>}
         </div>
         <div className="topbar-actions">
           <div className="theme-switch" role="group" aria-label="Color theme">
@@ -701,10 +702,10 @@ export default function App() {
           </div>
           <span className="topbar-divider" />
           <WorkspaceControls graph={graph} projectId={projectId} onProjectId={changeProjectId} onNotice={notice}
-            onSaved={(id, savedGraph) => { changeProjectId(id); setProjectBaseline(JSON.stringify(cleanGraph(savedGraph))); }}
+            onSaved={(id, savedGraph) => { changeProjectId(id); markProjectSaved(savedGraph); }}
             onRename={name => commit({ ...graphRef.current, name })}
             onNew={() => { commit(examples.blank()); changeProjectId(null); select(null); setScope("all"); setExpanded(false); }}
-            onOpen={(opened, id) => { commit(opened); changeProjectId(id); setProjectBaseline(JSON.stringify(cleanGraph(opened))); select(null); setScope(preferredSnapshotScope(opened)); setExpanded(false); setTimeout(fit, 100); }} />
+            onOpen={(opened, id) => { commit(opened); changeProjectId(id); markProjectSaved(opened); select(null); setScope(preferredSnapshotScope(opened)); setExpanded(false); setTimeout(fit, 100); }} />
           <div className="example-picker" ref={menu}>
             <button
               className={`quiet-button example-trigger ${exampleMenu ? "active" : ""}`}

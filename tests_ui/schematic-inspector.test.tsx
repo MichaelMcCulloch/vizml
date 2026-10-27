@@ -125,3 +125,33 @@ test("expanded architecture exposes branch navigation and reports changes", asyn
   view.rerender(<Architecture {...props} expanded={false} />);
   expect(screen.queryByLabelText("Focus model branch")).toBeNull();
 });
+
+test("project save state recovers after reload and ignores stale requests", async () => {
+  const { renderHook, act, waitFor } = await import("@testing-library/react");
+  const { useProjectBaseline } = await import("../src/useProjectBaseline");
+  const { cleanGraph } = await import("../src/model");
+  const graph = parseGraph(JSON.stringify({ version: 1, name: "Saved", nodes: [], edges: [] }));
+  let resolveFirst!: (value: {graph: typeof graph}) => void;
+  const load = (_id: string) => new Promise<{graph: typeof graph}>(resolve => { resolveFirst = resolve; });
+  const hook = renderHook(() => useProjectBaseline("project", load));
+  expect(hook.result.current.status).toBe("checking");
+  await act(async () => { resolveFirst({graph}); });
+  await waitFor(() => expect(hook.result.current.baseline).toBe(JSON.stringify(cleanGraph(graph))));
+  expect(hook.result.current.status).toBe("ready");
+
+  hook.unmount();
+  const second = renderHook(() => useProjectBaseline("project", load));
+  const newlySaved = { ...graph, name: "Newer save" };
+  act(() => second.result.current.saved(newlySaved));
+  await act(async () => { resolveFirst({graph}); });
+  expect(second.result.current.baseline).toBe(JSON.stringify(cleanGraph(newlySaved)));
+});
+
+test("unavailable saved projects report an unknown state", async () => {
+  const { renderHook, waitFor } = await import("@testing-library/react");
+  const { useProjectBaseline } = await import("../src/useProjectBaseline");
+  const load = async () => { throw new Error("offline"); };
+  const hook = renderHook(() => useProjectBaseline("project", load));
+  await waitFor(() => expect(hook.result.current.status).toBe("unavailable"));
+  expect(hook.result.current.baseline).toBeNull();
+});
