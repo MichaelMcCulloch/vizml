@@ -24,6 +24,7 @@ import {
 } from "../model";
 import { sequenceGeometry } from "./sequenceGeometry";
 import { architectureGlyph, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains } from "./architectureSemantics";
+import { separateAlignedPaths } from "./architectureLayout";
 import { recurrentGeometry, recurrentMetrics, spatialScale, type SpatialFace } from "./recurrentGeometry";
 import {
   connectionExtent,
@@ -707,7 +708,7 @@ export default function Architecture({
         if (edge.source === dominant) continue;
         const source = byId.get(edge.source);
         if (!source || source.data.kind !== "dense" || !/bias|condition/i.test(`${source.data.label} ${source.data.params.role ?? ""}`)) continue;
-        if ((flowChildren.get(edge.source)?.length ?? 0) > 0) continue;
+        if (graph.edges.filter(e => e.source === edge.source && byId.has(e.target)).length !== 1) continue;
         if (parkedAt.has(edge.source)) continue;
         const targetPoint = pointFor(targetId);
         const point = new THREE.Vector3(
@@ -870,24 +871,28 @@ export default function Architecture({
       }
     }
 
-    // Relaxation places the lanes; explicit unbranched chains then share one
-    // centerline so CNN and fully connected stacks read as coherent sequences.
-    for (const chain of straightChains(validNodes, graph.edges, id => {
-      const kind = byId.get(id)!.data.kind;
-      if (!["other", "dense", "normalize"].includes(architectureGlyph(kind))) return "other";
+    // Keep sequential operations on one centerline, then resolve collisions
+    // between whole paths so alignment cannot undo the clearance pass.
+    const chains = straightChains(validNodes, graph.edges, id => {
+      const glyph = architectureGlyph(byId.get(id)!.data.kind);
+      if (["concat", "add", "gather", "dot"].includes(glyph) || parkedAt.has(id)) return "other";
       return layoutFamily(id);
-    })) {
-      const points = chain.map(id => positions.get(id)!);
-      const y = points.reduce((sum, point) => sum + point.y, 0) / points.length;
-      const z = points.reduce((sum, point) => sum + point.z, 0) / points.length;
-      for (const point of points) { point.y = y; point.z = z; }
-    }
-    // Condition/bias projections remain attached to their add after relaxation.
+    });
+    separateAlignedPaths(validNodes, chains, positions, halfWidthOf, new Set(parkedAt.keys()));
+    // Place each condition/bias beside its own dependent, with separate slots
+    // when an add has more than one such input.
+    const parkedCounts = new Map<string, number>();
     for (const [id] of parkedAt) {
       const edge = graph.edges.find(e => e.source === id && ["add", "residual"].includes(byId.get(e.target)?.data.kind ?? ""));
       const target = edge && positions.get(edge.target);
       const point = positions.get(id);
-      if (target && point) { point.x = target.x - 1.2; point.y = target.y; point.z = target.z - halfWidthOf(edge!.target) - 1.5; }
+      if (target && point && edge) {
+        const slot = parkedCounts.get(edge.target) ?? 0;
+        parkedCounts.set(edge.target, slot + 1);
+        point.x = target.x - (halfDepth.get(edge.target) ?? 0.15) - 0.8;
+        point.y = target.y;
+        point.z = target.z - halfWidthOf(edge.target) - 1.5 - slot * 1.6;
+      }
     }
 
     const layoutPoint = (id: string) =>
