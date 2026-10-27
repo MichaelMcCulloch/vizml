@@ -18,8 +18,8 @@ export function separateAlignedPaths(
   for (const group of groups) {
     const avg = (axis: "y" | "z") => group.reduce((sum, id) => sum + positions.get(id)![axis], 0) / group.length;
     // Pull the old flow lanes closer before finding the nearest free cell.
-    const preferredY = Math.round(avg("y") * 0.65 / grid);
-    const preferredZ = Math.round(avg("z") * 0.65 / grid);
+    const preferredY = Math.round(avg("y") * 0.3 / grid);
+    const preferredZ = Math.round(avg("z") * 0.3 / grid);
     const available = (y: number, z: number) => placed.every(other => group.every(id => other.every(otherId => {
       const p = positions.get(id)!, q = positions.get(otherId)!;
       if (Math.abs(p.x - q.x) > grid * 0.5) return true;
@@ -41,4 +41,32 @@ export function separateAlignedPaths(
     for (const id of group) { const point = positions.get(id)!; point.y = chosen[0]; point.z = chosen[1]; }
     placed.push(group);
   }
+}
+
+/** Pack each dependency as close as its glyph footprints permit on the grid. */
+export function compactGridColumns(
+  ids: string[], edges: { source: string; target: string }[],
+  footprint: (id: string) => { left: number; right: number }, grid = 2,
+): Map<string, number> {
+  const valid = new Set(ids);
+  const incoming = new Map<string, string[]>(), outgoing = new Map<string, string[]>();
+  for (const {source, target} of edges) {
+    if (!valid.has(source) || !valid.has(target)) continue;
+    incoming.set(target, [...(incoming.get(target) ?? []), source]);
+    outgoing.set(source, [...(outgoing.get(source) ?? []), target]);
+  }
+  const gap = (a: string, b: string) => Math.max(grid,
+    Math.ceil((footprint(a).right + footprint(b).left + 0.35) / grid) * grid);
+  const x = new Map<string, number>();
+  for (const id of ids) {
+    const parents = (incoming.get(id) ?? []).filter(parent => x.has(parent));
+    x.set(id, parents.length ? Math.max(...parents.map(parent => x.get(parent)! + gap(parent, id))) : 0);
+  }
+  // Move shorter branches toward their first join, without changing their
+  // dependency order. Long skip connections remain long by necessity.
+  for (const id of [...ids].reverse()) {
+    const children = outgoing.get(id) ?? [];
+    if (children.length) x.set(id, Math.max(x.get(id)!, Math.min(...children.map(child => x.get(child)! - gap(id, child)))));
+  }
+  return x;
 }

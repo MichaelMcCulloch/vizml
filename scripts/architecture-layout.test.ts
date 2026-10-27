@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { separateAlignedPaths } from "../src/components/architectureLayout";
+import { compactGridColumns, separateAlignedPaths } from "../src/components/architectureLayout";
 
 test("separates overlapping branches without breaking their centerlines", () => {
   const positions = new Map([
@@ -35,4 +35,18 @@ test("automatic placement uses the manual two-unit grid and compacts sparse lane
   }
   expect(Math.abs(positions.get("a")!.z)).toBeLessThan(8);
   expect(positions.get("a")!.z).toBe(positions.get("b")!.z);
+});
+
+test("packs independent branches without widening every depth for one large glyph", () => {
+  const edges = [
+    {source:"a", target:"b"}, {source:"b", target:"c"}, {source:"c", target:"d"},
+    {source:"x", target:"y"}, {source:"y", target:"z"},
+  ];
+  const columns = compactGridColumns(["a", "x", "b", "y", "c", "z", "d"], edges,
+    id => ({left: id === "y" ? 1.85 : 0.15, right: 0.15}));
+  expect(columns.get("b")! - columns.get("a")!).toBe(2);
+  expect(columns.get("d")! - columns.get("a")!).toBe(6);
+  expect(columns.get("y")! - columns.get("x")!).toBe(4);
+  for (const edge of edges) expect(columns.get(edge.target)!).toBeGreaterThan(columns.get(edge.source)!);
+  for (const x of columns.values()) expect(x % 2).toBe(0);
 });

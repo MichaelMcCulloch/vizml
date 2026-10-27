@@ -24,7 +24,7 @@ import {
 } from "../model";
 import { sequenceGeometry } from "./sequenceGeometry";
 import { architectureGlyph, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains } from "./architectureSemantics";
-import { separateAlignedPaths } from "./architectureLayout";
+import { compactGridColumns, separateAlignedPaths } from "./architectureLayout";
 import { recurrentGeometry, recurrentMetrics, spatialScale, type SpatialFace } from "./recurrentGeometry";
 import {
   connectionExtent,
@@ -315,9 +315,6 @@ export default function Architecture({
     const viewStart = graph.mode === "schematic" ? Math.min(...depths.values()) : firstDepth;
     if (Number.isFinite(viewStart)) for (const [id, depth] of depths) depths.set(id, depth - viewStart);
     const maxDepth = Math.max(1, ...depths.values());
-    // Columns are sized below, once the visual footprint of each layer is known.
-    const depthX = new Map<number, number>();
-    const xForDepth = (depth: number) => depthX.get(depth) ?? depth * SNAP_STEP;
     const pointMap = new Map<string, THREE.Vector3>();
     const neurons = new Map<string, THREE.Vector3[]>();
     const inputNeurons = new Map<string, THREE.Vector3[]>();
@@ -663,26 +660,21 @@ export default function Architecture({
         halfDepth.set(id, 0.15);
       }
     }
-    // Each topological depth occupies a grid column. Reserve extra room for
-    // the input column drawn inside the first dense layer and for wide glyphs.
-    const orderedDepths = [...new Set(depths.values())].sort((a, b) => a - b);
-    let cursor = 0;
-    let previousRight = 0;
-    for (const [index, depth] of orderedDepths.entries()) {
-      const atDepth = validNodes.filter(id => depths.get(id) === depth);
-      const left = Math.max(0, ...atDepth.map(id => (halfDepth.get(id) ?? 0.15) +
-        (needsInputColumn(id) ? 1.7 : 0)));
-      const right = Math.max(0, ...atDepth.map(id => halfDepth.get(id) ?? 0.15));
-      if (index) cursor += Math.max(SNAP_STEP, Math.ceil((previousRight + left + 0.35) / SNAP_STEP) * SNAP_STEP);
-      depthX.set(depth, cursor);
-      previousRight = right;
-    }
-    const maxX = Math.max(1, cursor);
+    // Pack each path independently instead of widening an entire depth when
+    // one unrelated branch needs room for an MLP input column.
+    const gridX = compactGridColumns(validNodes, graph.edges, id => {
+      const glyph = architectureGlyph(byId.get(id)!.data.kind);
+      const operatorDepth = glyph === "gather" || glyph === "activation" ? 0.55
+        : glyph === "pool" ? 0.6 : glyph === "dot" ? 0.38 : undefined;
+      const half = operatorDepth ?? halfDepth.get(id) ?? 0.15;
+      return { left: half + (needsInputColumn(id) ? 1.7 : 0), right: half };
+    }, SNAP_STEP);
+    const maxX = Math.max(1, ...gridX.values());
     const pointFor = (id: string) => {
       const depth = depths.get(id)!;
       const lane = lanes[laneOfNode.get(id) ?? 0];
       return new THREE.Vector3(
-        xForDepth(depth),
+        gridX.get(id) ?? depth * SNAP_STEP,
         0.3 -
           (displayLevel.get(id) ?? lane?.level ?? 0) * flowLevelSpacing,
         displayLateral.get(id) ??
@@ -906,14 +898,16 @@ export default function Architecture({
 
     const layoutPoint = (id: string) =>
       positions.get(id) ?? parkedAt.get(id) ?? pointFor(id);
-    let maxAbsZ = 0;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
     let minX = Number.POSITIVE_INFINITY;
     let maxBoundX = Number.NEGATIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
     for (const id of validNodes) {
       const point = layoutPoint(id);
-      maxAbsZ = Math.max(maxAbsZ, Math.abs(point.z));
+      minZ = Math.min(minZ, point.z);
+      maxZ = Math.max(maxZ, point.z);
       minX = Math.min(minX, point.x);
       maxBoundX = Math.max(maxBoundX, point.x);
       minY = Math.min(minY, point.y);
@@ -923,8 +917,8 @@ export default function Architecture({
     const frameMaxX = Math.max(maxX + 4, maxBoundX + 4);
     const frameMinY = minY - 4.2;
     const frameMaxY = maxY + 4.8;
-    const frameMinZ = -(maxAbsZ + 4);
-    const frameMaxZ = maxAbsZ + 4;
+    const frameMinZ = Number.isFinite(minZ) ? minZ - 4 : -4;
+    const frameMaxZ = Number.isFinite(maxZ) ? maxZ + 4 : 4;
     const frameSizeX = frameMaxX - frameMinX;
     const frameSizeY = frameMaxY - frameMinY;
     const frameSizeZ = frameMaxZ - frameMinZ;
