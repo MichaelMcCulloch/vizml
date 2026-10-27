@@ -21,3 +21,18 @@ test("leaves parked attachments alone and does not separate distant paths", () =
   separateAlignedPaths(["a", "b", "bias"], [], positions, () => 1, new Set(["bias"]));
   expect([...positions.values()].map(p => [p.y, p.z])).toEqual([[0, 0], [0, 0], [0, 0]]);
 });
+
+test("automatic placement uses the manual two-unit grid and compacts sparse lanes", () => {
+  const positions = new Map([
+    ["a", {x: 0, y: 0.3, z: 8}], ["b", {x: 2, y: 0.3, z: 8}],
+    ["c", {x: 0, y: -8, z: -8}],
+  ]);
+  separateAlignedPaths(["a", "b", "c"], [["a", "b"]], positions, () => 0.25);
+  for (const point of positions.values()) {
+    expect(point.x % 2).toBe(0);
+    expect(Math.abs(point.y % 2)).toBe(0);
+    expect(Math.abs(point.z % 2)).toBe(0);
+  }
+  expect(Math.abs(positions.get("a")!.z)).toBeLessThan(8);
+  expect(positions.get("a")!.z).toBe(positions.get("b")!.z);
+});

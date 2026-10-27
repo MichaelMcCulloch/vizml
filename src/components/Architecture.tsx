@@ -284,6 +284,15 @@ export default function Architecture({
     const validNodes = analysis.order.filter(
       (id) => analysis.nodes[id] && byId.has(id),
     );
+    const denseRuns = denseRunBoundaries(validNodes, graph.edges, id => architectureGlyph(byId.get(id)!.data.kind) === "dense");
+    const needsInputColumn = (id: string) => {
+      if (!denseRuns.starts.has(id)) return false;
+      const incoming = graph.edges.filter(edge => edge.target === id && byId.has(edge.source));
+      if (incoming.length !== 1) return true;
+      const source = byId.get(incoming[0].source)!;
+      // A vector input already supplies the yellow input column.
+      return !(isInput(source.data.kind) && analysis.nodes[source.id]?.shape.length === 1);
+    };
     const depths = new Map(
       validNodes.map((id) => [id, analysis.nodes[id].depth]),
     );
@@ -306,24 +315,9 @@ export default function Architecture({
     const viewStart = graph.mode === "schematic" ? Math.min(...depths.values()) : firstDepth;
     if (Number.isFinite(viewStart)) for (const [id, depth] of depths) depths.set(id, depth - viewStart);
     const maxDepth = Math.max(1, ...depths.values());
-    const spacing = 4.5;
+    // Columns are sized below, once the visual footprint of each layer is known.
     const depthX = new Map<number, number>();
-    if (graph.template?.startsWith("dinov3_convnext_")) {
-      let cursor = 0;
-      for (const depth of [...new Set(depths.values())].sort((a, b) => a - b)) {
-        depthX.set(depth, cursor);
-        const kinds = validNodes
-          .filter((id) => depths.get(id) === depth)
-          .map((id) => byId.get(id)!.data.kind);
-        cursor += kinds.includes("convnext_stage")
-          ? 3
-          : kinds.every((kind) => kind === "layernorm" || kind === "embedding")
-            ? 0.9
-            : 2.1;
-      }
-    }
-    const xForDepth = (depth: number) => depthX.get(depth) ?? depth * spacing;
-    const maxX = Math.max(1, ...[...depths.values()].map(xForDepth));
+    const xForDepth = (depth: number) => depthX.get(depth) ?? depth * SNAP_STEP;
     const pointMap = new Map<string, THREE.Vector3>();
     const neurons = new Map<string, THREE.Vector3[]>();
     const inputNeurons = new Map<string, THREE.Vector3[]>();
@@ -669,6 +663,21 @@ export default function Architecture({
         halfDepth.set(id, 0.15);
       }
     }
+    // Each topological depth occupies a grid column. Reserve extra room for
+    // the input column drawn inside the first dense layer and for wide glyphs.
+    const orderedDepths = [...new Set(depths.values())].sort((a, b) => a - b);
+    let cursor = 0;
+    let previousRight = 0;
+    for (const [index, depth] of orderedDepths.entries()) {
+      const atDepth = validNodes.filter(id => depths.get(id) === depth);
+      const left = Math.max(0, ...atDepth.map(id => (halfDepth.get(id) ?? 0.15) +
+        (needsInputColumn(id) ? 1.7 : 0)));
+      const right = Math.max(0, ...atDepth.map(id => halfDepth.get(id) ?? 0.15));
+      if (index) cursor += Math.max(SNAP_STEP, Math.ceil((previousRight + left + 0.35) / SNAP_STEP) * SNAP_STEP);
+      depthX.set(depth, cursor);
+      previousRight = right;
+    }
+    const maxX = Math.max(1, cursor);
     const pointFor = (id: string) => {
       const depth = depths.get(id)!;
       const lane = lanes[laneOfNode.get(id) ?? 0];
@@ -878,7 +887,7 @@ export default function Architecture({
       if (["concat", "add", "gather", "dot"].includes(glyph) || parkedAt.has(id)) return "other";
       return layoutFamily(id);
     });
-    separateAlignedPaths(validNodes, chains, positions, halfWidthOf, new Set(parkedAt.keys()));
+    separateAlignedPaths(validNodes, chains, positions, halfWidthOf, new Set(parkedAt.keys()), SNAP_STEP);
     // Place each condition/bias beside its own dependent, with separate slots
     // when an add has more than one such input.
     const parkedCounts = new Map<string, number>();
@@ -889,9 +898,9 @@ export default function Architecture({
       if (target && point && edge) {
         const slot = parkedCounts.get(edge.target) ?? 0;
         parkedCounts.set(edge.target, slot + 1);
-        point.x = target.x - (halfDepth.get(edge.target) ?? 0.15) - 0.8;
+        point.x = target.x - SNAP_STEP;
         point.y = target.y;
-        point.z = target.z - halfWidthOf(edge.target) - 1.5 - slot * 1.6;
+        point.z = target.z - (Math.ceil((halfWidthOf(edge.target) + 1.5) / SNAP_STEP) + slot) * SNAP_STEP;
       }
     }
 
@@ -931,15 +940,6 @@ export default function Architecture({
       return new THREE.Vector3(offset[0], offset[1], offset[2]);
     };
     const layerGroups = new Map<string, THREE.Group>();
-    const denseRuns = denseRunBoundaries(validNodes, graph.edges, id => architectureGlyph(byId.get(id)!.data.kind) === "dense");
-    const needsInputColumn = (id: string) => {
-      if (!denseRuns.starts.has(id)) return false;
-      const incoming = graph.edges.filter(edge => edge.target === id && byId.has(edge.source));
-      if (incoming.length !== 1) return true;
-      const source = byId.get(incoming[0].source)!;
-      // A vector input already supplies the yellow input column.
-      return !(isInput(source.data.kind) && analysis.nodes[source.id]?.shape.length === 1);
-    };
     const recurrentLoops = new Map<string, THREE.Vector3[][]>();
 
     for (const id of validNodes) {
