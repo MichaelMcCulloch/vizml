@@ -1,14 +1,20 @@
 import { expect, test } from "bun:test";
-import { architectureGlyph, concatSegments, hasLearnedBias, straightChains } from "../src/components/architectureSemantics";
+import { architectureGlyph, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains } from "../src/components/architectureSemantics";
 import { makeNode } from "../src/model";
 
 test("operation glyphs stay distinct regardless of tensor rank", () => {
   expect(["concat", "add", "residual", "gather", "dot", "dense"].map(k => architectureGlyph(k as any)))
     .toEqual(["concat", "add", "add", "gather", "dot", "dense"]);
 });
-test("concatenation partitions the bar in source order and in proportion to widths", () => {
-  expect(concatSegments([2, 1, 1])).toEqual([[0, 0.5], [0.5, 0.75], [0.75, 1]]);
-  expect(concatSegments([0, NaN])).toEqual([[0, 0.5], [0.5, 1]]);
+test("concatenation allocates one equal bar segment per incoming edge", () => {
+  expect(concatSegments(5)).toEqual([[0, 0.2], [0.2, 0.4], [0.4, 0.6], [0.6, 0.8], [0.8, 1]]);
+  expect(concatSegments(0)).toEqual([]);
+});
+test("dense chains have one input and one output, with forks starting new runs", () => {
+  const edges = [{source:"i",target:"a"},{source:"a",target:"b"},{source:"b",target:"c"},{source:"c",target:"x"},{source:"c",target:"d"}];
+  const roles = denseRunBoundaries(["i","a","b","c","d","x"], edges, id => ["a","b","c","d"].includes(id));
+  expect([...roles.starts]).toEqual(["a", "d"]);
+  expect([...roles.ends]).toEqual(["c", "d"]);
 });
 test("bias is enabled for older layers and can be disabled", () => {
   const n = makeNode("dense", 0, 0);

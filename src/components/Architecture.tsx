@@ -23,7 +23,7 @@ import {
   type ModelGraph,
 } from "../model";
 import { sequenceGeometry } from "./sequenceGeometry";
-import { architectureGlyph, concatSegments, hasLearnedBias, straightChains } from "./architectureSemantics";
+import { architectureGlyph, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains } from "./architectureSemantics";
 import { recurrentGeometry, recurrentMetrics, spatialScale, type SpatialFace } from "./recurrentGeometry";
 import {
   connectionExtent,
@@ -926,6 +926,15 @@ export default function Architecture({
       return new THREE.Vector3(offset[0], offset[1], offset[2]);
     };
     const layerGroups = new Map<string, THREE.Group>();
+    const denseRuns = denseRunBoundaries(validNodes, graph.edges, id => architectureGlyph(byId.get(id)!.data.kind) === "dense");
+    const needsInputColumn = (id: string) => {
+      if (!denseRuns.starts.has(id)) return false;
+      const incoming = graph.edges.filter(edge => edge.target === id && byId.has(edge.source));
+      if (incoming.length !== 1) return true;
+      const source = byId.get(incoming[0].source)!;
+      // A vector input already supplies the yellow input column.
+      return !(isInput(source.data.kind) && analysis.nodes[source.id]?.shape.length === 1);
+    };
     const recurrentLoops = new Map<string, THREE.Vector3[][]>();
 
     for (const id of validNodes) {
@@ -938,7 +947,7 @@ export default function Architecture({
       layerGroups.set(id, group);
       const glyph = architectureGlyph(node.data.kind);
       const terminal = !hasOutgoing.has(id);
-      const nodeColor = isInput(node.data.kind) || (terminal && (isOutput(node.data.kind) || glyph === "dense"))
+      const nodeColor = isInput(node.data.kind) || (glyph === "dense" && denseRuns.ends.has(id)) || (terminal && isOutput(node.data.kind))
         ? "#e3b74f" : glyph === "dense" ? "#ad78df" : catalog[node.data.kind].color;
       const color = displayColor(nodeColor, theme);
       const focused = selected === id;
@@ -965,11 +974,7 @@ export default function Architecture({
         if (glyph === "concat") {
           addMesh(new THREE.BoxGeometry(0.18, 4, 0.22));
           const incoming = graph.edges.filter(e => e.target === id && byId.has(e.source));
-          const segments = concatSegments(incoming.map(e => {
-            const shape = analysis.nodes[e.source]?.shape ?? [];
-            const axis = node.data.params.axis;
-            return Number((axis === "channels" || (analysis.nodes[id]?.shape.length ?? 0) >= 3) && shape.length >= 3 ? shape.at(-3) : shape.at(-1)) || 1;
-          }));
+          const segments = concatSegments(incoming.length);
           for (const [, end] of segments.slice(0, -1))
             addMesh(new THREE.BoxGeometry(0.22, 0.025, 0.34), 0, 2 - end * 4, 0);
           halfDepth.set(id, 0.09);
@@ -1222,6 +1227,25 @@ export default function Architecture({
           group.add(halos);
         }
         neurons.set(id, positions);
+        if (glyph === "dense" && needsInputColumn(id)) {
+          // The first column is the MLP's input, followed by the outputs of
+          // each dense operation. These are sampled, not extra graph nodes.
+          const width = Number(node.data.params.input_features) || info.input_shape.at(-1) || 1;
+          const inputCount = Math.max(1, Math.min(13, width));
+          const inputPositions = Array.from({ length: inputCount }, (_, i) =>
+            new THREE.Vector3(-1.7, inputCount === 1 ? 0 : (i / (inputCount - 1) - 0.5) * height, 0));
+          const inputColor = displayColor("#e3b74f", theme);
+          const inputDots = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 12, 10),
+            new THREE.MeshStandardMaterial({ color: inputColor, emissive: inputColor, emissiveIntensity: 0.65, transparent: true, opacity }), inputCount);
+          const marker = new THREE.Object3D();
+          inputPositions.forEach((position, i) => { marker.position.copy(position); marker.updateMatrix(); inputDots.setMatrixAt(i, marker.matrix); });
+          inputDots.instanceMatrix.needsUpdate = true; inputDots.userData.nodeId = id; meshes.push(inputDots); group.add(inputDots);
+          inputNeurons.set(id, inputPositions);
+          const threads: number[] = [];
+          for (const start of inputPositions) for (const end of positions) threads.push(...start.toArray(), ...end.toArray());
+          group.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(threads, 3)),
+            new THREE.LineBasicMaterial({ color: displayColor("#b294d6", theme), transparent: true, opacity: (theme === "light" ? 0.23 : 0.17) * opacity })));
+        }
         if (glyph === "dense" && hasLearnedBias(node, graph.mode === "schematic")) {
           const biases = new THREE.InstancedMesh(new THREE.SphereGeometry(0.038, 10, 8),
             new THREE.MeshStandardMaterial({ color: "#268fff", emissive: "#268fff", emissiveIntensity: 0.5 }), count);
@@ -1415,7 +1439,7 @@ export default function Architecture({
       const sourceHalf = halfDepth.get(edge.source) ?? 0.15;
       const targetHalf = halfDepth.get(edge.target) ?? 0.15;
       const aFace = a.clone().add(new THREE.Vector3(sourceHalf, 0, 0));
-      const bFace = b.clone().sub(new THREE.Vector3(targetHalf, 0, 0));
+      const bFace = b.clone().sub(new THREE.Vector3(targetHalf + (inputNeurons.has(edge.target) ? 1.7 : 0), 0, 0));
       const sourceSpatialFace = spatialFaces.get(edge.source)?.output;
       const targetSpatialFace = spatialFaces.get(edge.target)?.input;
       if (sourceSpatialFace) aFace.add(sourceSpatialFace.center);
@@ -1469,16 +1493,13 @@ export default function Architecture({
         if (sourceGlyph === "concat") from = bar(aFace, 0, 1);
         if (targetGlyph === "concat") {
           const incoming = graph.edges.filter(e => e.target === edge.target && byId.has(e.source));
-          const segments = concatSegments(incoming.map(e => {
-            const shape = analysis.nodes[e.source]?.shape ?? [];
-            return Number((target.data.params.axis === "channels" || analysis.nodes[target.id].shape.length >= 3) && shape.length >= 3 ? shape.at(-3) : shape.at(-1)) || 1;
-          }));
+          const segments = concatSegments(incoming.length);
           const index = incoming.indexOf(edge);
           const [start, end] = segments[index] ?? [0, 1];
           to = bar(bFace, start, end);
         }
         addRibbon(group, from, to, appearance(theme === "light" ? 0.24 : 0.17), sourceGlyph === "concat", targetGlyph === "concat");
-        if (sourceGlyph === "concat" && targetGlyph === "dense" && bn &&
+        if (sourceGlyph === "concat" && targetGlyph === "dense" && bn && !inputNeurons.has(edge.target) &&
             (graph.mode !== "schematic" || analysis.nodes[target.id].parameters > 0)) {
           const samples = Array.from({ length: 13 }, (_, i) => aFace.clone().add(new THREE.Vector3(0, 2 - i * 4 / 12, 0)));
           addSplineBatch(group, samples.flatMap(start => bn.map(end => makeConnectionCurve(start, end, 0).getPoints(16))),
@@ -1508,7 +1529,7 @@ export default function Architecture({
         label.position.y += 0.35;
         label.visible = labelsValue.current;
         group.add(label);
-      } else if (bn && !residual && targetGlyph === "dense" &&
+      } else if (bn && !residual && targetGlyph === "dense" && !inputNeurons.has(edge.target) &&
           (graph.mode !== "schematic" || analysis.nodes[target.id].parameters > 0)) {
         // Sample flattened spatial inputs too: every shown source connects to
         // every shown target, but these threads are not actual weight values.

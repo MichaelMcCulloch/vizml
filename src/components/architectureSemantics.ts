@@ -22,16 +22,32 @@ export function hasLearnedBias(node: LayerNode, schematic = false): boolean {
   return schematic && node.data.params.bias === undefined ? false : Number(node.data.params.bias ?? 1) !== 0;
 }
 
-/** Assign each input a non-overlapping segment of the bar in edge order. */
-export function concatSegments(weights: number[]): [number, number][] {
-  const safe = weights.map(n => Number.isFinite(n) && n > 0 ? n : 1);
-  const total = safe.reduce((a, b) => a + b, 0);
-  let cursor = 0;
-  return safe.map(n => {
-    const start = cursor / total;
-    cursor += n;
-    return [start, cursor / total];
-  });
+/** Assign equal, non-overlapping segments in the order of incoming edges. */
+export function concatSegments(count: number): [number, number][] {
+  if (!Number.isInteger(count) || count <= 0) return [];
+  return Array.from({ length: count }, (_, i) => [i / count, (i + 1) / count]);
+}
+
+/** Dense runs are display groups only; no operators or dependencies are changed. */
+export function denseRunBoundaries(
+  ids: string[], edges: { source: string; target: string }[], isDense: (id: string) => boolean,
+): { starts: Set<string>; ends: Set<string> } {
+  const valid = new Set(ids);
+  const incoming = new Map<string, string[]>(), outgoing = new Map<string, string[]>();
+  for (const { source, target } of edges) {
+    if (!valid.has(source) || !valid.has(target)) continue;
+    incoming.set(target, [...(incoming.get(target) ?? []), source]);
+    outgoing.set(source, [...(outgoing.get(source) ?? []), target]);
+  }
+  const connected = (a: string, b: string) => isDense(a) && isDense(b)
+    && outgoing.get(a)?.length === 1 && incoming.get(b)?.length === 1;
+  const starts = new Set<string>(), ends = new Set<string>();
+  for (const id of ids.filter(isDense)) {
+    const parents = incoming.get(id) ?? [], children = outgoing.get(id) ?? [];
+    if (parents.length !== 1 || !connected(parents[0], id)) starts.add(id);
+    if (children.length !== 1 || !connected(id, children[0])) ends.add(id);
+  }
+  return { starts, ends };
 }
 
 /** Align unbranched paths, without forcing joins or forks into a chain. */
