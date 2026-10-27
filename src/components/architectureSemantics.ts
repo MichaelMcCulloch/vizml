@@ -81,3 +81,9 @@ export function straightChains(
   }
   return chains;
 }
+
+/** A dense input column can be shared only with the vector it actually consumes. */
+export function sharesDenseInputColumn(isInputNode: boolean, shape: number[] | undefined, inputFeatures: unknown): boolean {
+  const declared = Number(inputFeatures);
+  return isInputNode && shape?.length === 1 && (!declared || shape[0] === declared);
+}

@@ -23,7 +23,7 @@ import {
   type ModelGraph,
 } from "../model";
 import { sequenceGeometry } from "./sequenceGeometry";
-import { architectureGlyph, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains } from "./architectureSemantics";
+import { architectureGlyph, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "./architectureSemantics";
 import { compactGridColumns, separateAlignedPaths } from "./architectureLayout";
 import { recurrentGeometry, recurrentMetrics, spatialScale, type SpatialFace } from "./recurrentGeometry";
 import {
@@ -293,8 +293,10 @@ export default function Architecture({
       const incoming = graph.edges.filter(edge => edge.target === id && byId.has(edge.source));
       if (incoming.length !== 1) return true;
       const source = byId.get(incoming[0].source)!;
-      // A vector input already supplies the yellow input column.
-      return !(isInput(source.data.kind) && analysis.nodes[source.id]?.shape.length === 1);
+      // A vector input supplies the first column only when it represents the
+      // declared input to this layer. Schematic dependencies can describe a
+      // projection from a small slice of a much larger observation.
+      return !sharesDenseInputColumn(isInput(source.data.kind), analysis.nodes[source.id]?.shape, byId.get(id)!.data.params.input_features);
     };
     const depths = new Map(
       validNodes.map((id) => [id, analysis.nodes[id].depth]),
@@ -1480,6 +1482,7 @@ export default function Architecture({
         endColor: tint ?? (residual ? color : displayColor(catalog[target.data.kind].color, theme)),
         opacity: opacity * focus,
       });
+      const longConnection = Math.abs(bFace.x - aFace.x) > SNAP_STEP * 4;
       const sourceGlyph = architectureGlyph(byId.get(edge.source)!.data.kind);
       const targetGlyph = architectureGlyph(target.data.kind);
       if (sourceGlyph === "concat" || targetGlyph === "concat") {
@@ -1502,7 +1505,7 @@ export default function Architecture({
           const [start, end] = segments[index] ?? [0, 1];
           to = bar(bFace, start, end);
         }
-        addRibbon(group, from, to, appearance(theme === "light" ? 0.24 : 0.17), sourceGlyph === "concat", targetGlyph === "concat");
+        addRibbon(group, from, to, appearance(longConnection ? (theme === "light" ? 0.075 : 0.06) : (theme === "light" ? 0.24 : 0.17)), sourceGlyph === "concat", targetGlyph === "concat");
         if (sourceGlyph === "concat" && targetGlyph === "dense" && bn && !inputNeurons.has(edge.target) &&
             (graph.mode !== "schematic" || analysis.nodes[target.id].parameters > 0)) {
           const samples = Array.from({ length: 13 }, (_, i) => aFace.clone().add(new THREE.Vector3(0, 2 - i * 4 / 12, 0)));
@@ -1544,6 +1547,12 @@ export default function Architecture({
         addSplineBatch(group, samples.flatMap(start => bn.map(end =>
           makeConnectionCurve(start, end, 0).getPoints(16))),
           appearance(theme === "light" ? 0.20 : 0.15));
+      } else if (an && bn && !residual && longConnection) {
+        // Long data dependencies are bundles, not weight matrices. Show one
+        // translucent ribbon and its centerline instead of a stack of threads
+        // stretching across unrelated layers.
+        addRibbon(group, an, bn, appearance(theme === "light" ? 0.06 : 0.05));
+        addSpline(group, aFace, bFace, appearance(theme === "light" ? 0.20 : 0.16), 0.18);
       } else if (an && bn && !residual) {
           const pairs = pairConnectionPorts(an, bn);
           addSplineBatch(

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { architectureGlyph, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains } from "../src/components/architectureSemantics";
+import { architectureGlyph, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "../src/components/architectureSemantics";
 import { makeNode } from "../src/model";
 
 test("operation glyphs stay distinct regardless of tensor rank", () => {
@@ -29,4 +29,13 @@ test("only unbranched paths of the same family form straight chains", () => {
   const edges = [{source:"a",target:"b"},{source:"b",target:"c"},{source:"c",target:"d"},{source:"c",target:"e"},{source:"e",target:"f"}];
   expect(straightChains(["a","b","c","d","e","f"], edges, id => id === "f" ? "spatial" : "vector"))
     .toEqual([["a","b","c"]]);
+});
+
+
+test("dense input columns reflect the declared feature slice", () => {
+  expect(sharesDenseInputColumn(true, [13708], 79)).toBe(false);
+  expect(sharesDenseInputColumn(true, [79], 79)).toBe(true);
+  expect(sharesDenseInputColumn(true, [79], undefined)).toBe(true);
+  expect(sharesDenseInputColumn(false, [79], 79)).toBe(false);
+  expect(sharesDenseInputColumn(true, [12, 79], 79)).toBe(false);
 });
