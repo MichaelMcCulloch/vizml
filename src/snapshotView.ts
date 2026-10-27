@@ -31,6 +31,8 @@ export function snapshotScopes(graph: ModelGraph) {
 }
 
 export function preferredSnapshotScope(graph: ModelGraph) {
+  // New nodes are not part of the imported snapshot's predefined scopes.
+  if (graph.metadata?.source_edited === true) return "all";
   const scopes = snapshotScopes(graph);
   const declared = graph.metadata?.default_scope;
   return typeof declared === "string" && scopes.some(s => s.id === declared) ? declared : scopes.some(s => s.id === "actor_cnn") ? "actor_cnn" : "all";

@@ -80,7 +80,7 @@ export default function CheckpointControls({ graph, valid, canBuild, onImport, o
   };
   return <>
     <button className="icon-button file-action" disabled={busy} onClick={() => file.current?.click()} aria-label="Import architecture or checkpoint" title="Import JSON, .pt, or both together"><ArrowUpFromLine size={16} /></button>
-    <button className="icon-button file-action" onClick={onSave} aria-label="Save graph" title="Save graph JSON · ⌘S"><ArrowDownToLine size={16} /></button>
+    <button className="icon-button file-action" onClick={onSave} aria-label="Download graph JSON" title="Download graph JSON"><ArrowDownToLine size={16} /></button>
     {(weights || info) && <button className="icon-button file-action" disabled={busy} onClick={inspect} aria-label="Inspect checkpoint" title={weights?.filename ?? info?.filename}><FileSearch size={16} /></button>}
     <div className="checkpoint-export">
       <button className="export-button" disabled={busy} onClick={() => setMenu(!menu)} aria-expanded={menu} aria-label="Export model">{busy ? <Loader2 size={14} className="spin" /> : <ArrowDownToLine size={14} />} {busy ? "Working…" : "Export"}<ChevronDown size={12} /></button>

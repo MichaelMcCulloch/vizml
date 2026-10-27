@@ -2887,7 +2887,6 @@ kbd {
 @media (max-width: 760px) {
   .inspector.snapshot-selected { display: flex; }
 }
-.snapshot-mode .add-block-button { display: none; }
 
 .proposal-budget { border-top: 1px solid rgb(var(--tone-4-rgb)); margin-top: 15px; }
 .proposal-budget > div { padding: 12px 0; border-bottom: 1px solid rgb(var(--tone-4-rgb)); }
@@ -2917,3 +2916,30 @@ kbd {
 .resizable-editor.horizontal.is-resizing * {
   cursor: col-resize !important;
 }
+
+.schematic-edit .field-label { display: block; margin: 12px 0 5px; }
+.schematic-edit textarea { width: 100%; min-height: 100px; resize: vertical; font: 11px var(--mono); }
+.schematic-error { color: rgb(var(--danger-rgb)); font-size: 11px; }
+.schematic-actions { display: flex; gap: 8px; margin-top: 12px; }
+.schematic-connection { display: flex; align-items: center; }
+.schematic-connection .snapshot-link { flex: 1; min-width: 0; }
+.workspace-menu-wrap { position: relative; }
+.workspace-menu { position: absolute; z-index: 91; right: 0; top: calc(100% + 10px); width: 300px; max-height: min(70vh, 560px); overflow-y: auto; background: rgb(var(--tone-2-rgb)); border: 1px solid rgb(var(--tone-4-rgb)); box-shadow: 0 16px 45px #0008; padding: 6px; border-radius: 7px; }
+.workspace-menu > button, .workspace-item > button:first-child { display: block; width: 100%; border: 0; background: none; color: rgb(var(--tone-9-rgb)); text-align: left; padding: 10px; border-radius: 4px; font-size: 12px; }
+.workspace-menu > button:hover, .workspace-item > button:first-child:hover { background: rgb(var(--tone-3-rgb)); }
+.workspace-menu small { display: block; color: rgb(var(--tone-7-rgb)); font-size: 10px; margin-top: 4px; }
+.workspace-heading { color: rgb(var(--tone-6-rgb)); font: 10px var(--mono); padding: 12px 10px 5px; border-top: 1px solid rgb(var(--tone-3-rgb)); }
+.workspace-empty { color: rgb(var(--tone-7-rgb)); padding: 4px 10px; font-size: 11px; }
+.workspace-item, .saved-template-item { display: flex; align-items: center; }
+.workspace-item > button:first-child, .saved-template-item > button:first-child { flex: 1; min-width: 0; }
+.saved-template-item > button:first-child { display: flex; align-items: center; gap: 10px; text-align: left; background: none; border: 0; color: rgb(var(--tone-9-rgb)); padding: 10px; }
+.saved-template-item > button:first-child:hover { background: rgb(var(--tone-3-rgb)); }
+.saved-template-item strong, .saved-template-item small { display: block; }
+.workspace-dialog { width: min(420px, calc(100vw - 32px)); padding: 24px; border-radius: 8px; background: rgb(var(--tone-2-rgb)); border: 1px solid rgb(var(--tone-4-rgb)); }
+.workspace-dialog h2 { margin: 0 0 8px; }
+.workspace-dialog p { color: rgb(var(--tone-7-rgb)); margin-bottom: 20px; }
+.workspace-dialog .text-field { width: 100%; margin-top: 8px; }
+.workspace-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.project-save-state { color: rgb(var(--tone-7-rgb)); font: 10px var(--mono); white-space: nowrap; }
+.template-save-current { padding: 8px; border-bottom: 1px solid rgb(var(--tone-3-rgb)); }
+.template-save-current .text-field { width: 100%; margin-top: 6px; }

@@ -8,7 +8,7 @@ COPY backend ./backend
 
 FROM python:3.12-slim-bookworm
 WORKDIR /app
-ENV PATH="/app/.venv/bin:$PATH" VIZML_CHECKPOINT_DIR=/data/checkpoints PYTHONUNBUFFERED=1
+ENV PATH="/app/.venv/bin:$PATH" VIZML_CHECKPOINT_DIR=/data/checkpoints VIZML_DATA_DIR=/data PYTHONUNBUFFERED=1
 COPY --from=build /app/.venv ./.venv
 COPY --from=build /app/backend ./backend
 EXPOSE 8000

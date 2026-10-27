@@ -12,7 +12,7 @@ from pydantic import BaseModel, ValidationError
 from .builder import compile_meta, export_python
 from .graph import analyze
 from .schema import Graph
-from . import checkpoints
+from . import checkpoints, workspace
 
 app = FastAPI(title="vizml", version="0.1.0")
 
@@ -38,6 +38,51 @@ async def analyze_graph(graph: Graph):
 @app.get("/api/templates/catan_convnext_small/encoder.py")
 async def catan_encoder_source():
     return FileResponse(Path(__file__).with_name("catan_convnext.py"), media_type="text/x-python", filename="catan_convnext_encoder.py")
+
+
+class WorkspaceSave(BaseModel):
+    name: str
+    graph: Graph
+
+
+@app.get("/api/workspace/{kind}")
+async def list_workspace(kind: Literal["projects", "templates"]):
+    return {"items": await asyncio.to_thread(workspace.list_items, kind)}
+
+
+@app.get("/api/workspace/{kind}/{key}")
+async def get_workspace(kind: Literal["projects", "templates"], key: str):
+    try:
+        return await asyncio.to_thread(workspace.get, kind, key)
+    except (ValueError, LookupError) as error:
+        raise HTTPException(404, str(error)) from error
+
+
+@app.post("/api/workspace/{kind}")
+async def create_workspace(kind: Literal["projects", "templates"], request: WorkspaceSave):
+    try:
+        return await asyncio.to_thread(workspace.save, kind, request.name, request.graph)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@app.put("/api/workspace/projects/{key}")
+async def update_workspace(key: str, request: WorkspaceSave):
+    try:
+        return await asyncio.to_thread(workspace.save, "projects", request.name, request.graph, key)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@app.delete("/api/workspace/{kind}/{key}")
+async def delete_workspace(kind: Literal["projects", "templates"], key: str):
+    try:
+        await asyncio.to_thread(workspace.delete, kind, key)
+        return {"deleted": True}
+    except (ValueError, LookupError) as error:
+        raise HTTPException(404, str(error)) from error
 
 
 class CheckpointExport(BaseModel):

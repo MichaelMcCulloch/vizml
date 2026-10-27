@@ -1181,11 +1181,10 @@ export function canConnect(
   source: string,
   target: string,
 ): boolean {
-  if (graph.mode === "schematic") return false;
   if (
     source === target ||
-    !graph.nodes.some((n) => n.id === source && !isOutput(n.data.kind)) ||
-    !graph.nodes.some((n) => n.id === target && !isInput(n.data.kind)) ||
+    !graph.nodes.some((n) => n.id === source && (graph.mode === "schematic" || !isOutput(n.data.kind))) ||
+    !graph.nodes.some((n) => n.id === target && (graph.mode === "schematic" || !isInput(n.data.kind))) ||
     graph.edges.some((e) => e.source === source && e.target === target)
   )
     return false;
@@ -1201,6 +1200,14 @@ export function canConnect(
     );
   }
   return true;
+}
+
+/** Structural schematic edits invalidate weight pairing and original totals. */
+export function editedSchematic(graph: ModelGraph): ModelGraph {
+  if (graph.mode !== "schematic") return graph;
+  const metadata: Record<string, unknown> = { ...graph.metadata, source_edited: true };
+  delete metadata.weights;
+  return { ...graph, metadata };
 }
 
 export type ResidualProjectionPlan = {

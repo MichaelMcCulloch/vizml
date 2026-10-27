@@ -176,3 +176,18 @@ def test_binary_api_upload_export_bind_download_and_error_recovery():
     assert client.post("/api/checkpoints/import", content=b"not a checkpoint").status_code == 400
     assert client.get("/api/checkpoints/not-an-id/download").status_code == 404
     assert client.get("/api/health").json()["status"] == "ok"
+
+
+def test_edited_schematic_preserves_source_metadata_without_claiming_original_totals():
+    data = schematic()
+    data["mode"] = "schematic"
+    data["metadata"]["source_edited"] = True
+    data["nodes"].append({"id": "new", "position": {"x": 0, "y": 0}, "data": {
+        "kind": "dense", "label": "New", "params": {}, "output_shape": ["B", 1],
+        "parameter_count": 1, "declaration_pending": True,
+    }})
+    result = analyze(Graph.model_validate(data))
+    assert result["valid"] and not result["executable"]
+    assert result["parameters"] == 9
+    assert any("original snapshot" in issue["message"] for issue in result["warnings"])
+    assert any("placeholder" in issue["message"] for issue in result["warnings"])

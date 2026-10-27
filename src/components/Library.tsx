@@ -2,7 +2,7 @@ import { Search, Plus, ArrowUpRight } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { catalog, type Kind } from "../model";
 
-export default function Library({ onAdd }: { onAdd: (kind: Kind) => void }) {
+export default function Library({ onAdd, schematic = false }: { onAdd: (kind: Kind) => void; schematic?: boolean }) {
   const [search, setSearch] = useState("");
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -20,7 +20,7 @@ export default function Library({ onAdd }: { onAdd: (kind: Kind) => void }) {
     return () => window.removeEventListener("keydown", listener);
   }, []);
   const filtered = Object.entries(catalog).filter(([, item]) =>
-    item.category !== "Snapshot" && `${item.title} ${item.subtitle} ${item.category}`
+    (schematic || item.category !== "Snapshot") && `${item.title} ${item.subtitle} ${item.category}`
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
@@ -28,7 +28,7 @@ export default function Library({ onAdd }: { onAdd: (kind: Kind) => void }) {
     <aside className="library">
       <div className="library-heading">
         <span>Building blocks</span>
-        <span className="count-tag">{Object.values(catalog).filter((item) => item.category !== "Snapshot").length}</span>
+        <span className="count-tag">{Object.values(catalog).filter((item) => schematic || item.category !== "Snapshot").length}</span>
       </div>
       <div className="search-box">
         <Search size={14} />
@@ -42,7 +42,7 @@ export default function Library({ onAdd }: { onAdd: (kind: Kind) => void }) {
         <kbd>/</kbd>
       </div>
       <div className="library-scroll">
-        {["Inputs", "Recurrent", "Attention", "Layers", "Composition", "Reference", "Outputs"].map((category) => {
+        {["Inputs", "Recurrent", "Attention", "Layers", "Composition", "Reference", "Outputs", ...(schematic ? ["Snapshot"] : [])].map((category) => {
           const items = filtered.filter(
             ([, item]) => item.category === category,
           );

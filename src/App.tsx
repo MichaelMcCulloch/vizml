@@ -38,6 +38,7 @@ import Architecture from "./components/Architecture";
 import ResizablePanels from "./components/ResizablePanels";
 import StatusBar from "./components/StatusBar";
 import TemplateMenu from "./components/TemplateMenu";
+import WorkspaceControls from "./components/WorkspaceControls";
 import CheckpointControls from "./components/CheckpointControls";
 import { preferredSnapshotScope, snapshotScopes } from "./snapshotView";
 import Library from "./components/Library";
@@ -51,6 +52,7 @@ import {
   expandConvNeXtStage,
   catalog,
   cleanGraph,
+  editedSchematic,
   examples,
   makeNode,
   parseGraph,
@@ -131,10 +133,23 @@ export default function App() {
   const [expanded, setExpanded] = useState(false);
   const [showLibrary, setShowLibrary] = useState(() => window.innerWidth > 900);
   const [saved, setSaved] = useState(true);
+  const [projectId, setProjectId] = useState<string | null>(() => {
+    try { return localStorage.getItem("vizml.project.id"); } catch { return null; }
+  });
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+  const [projectBaseline, setProjectBaseline] = useState<string | null>(null);
+  const projectGraph = useMemo(() => projectId ? JSON.stringify(cleanGraph(graph)) : null, [projectId, graph]);
+  const changeProjectId = useCallback((id: string | null) => {
+    if (projectIdRef.current !== id) setProjectBaseline(null);
+    projectIdRef.current = id;
+    setProjectId(id);
+    try { if (id) localStorage.setItem("vizml.project.id", id); else localStorage.removeItem("vizml.project.id"); } catch { /* workspace still works for this session */ }
+  }, []);
   const [, setHistoryVersion] = useState(0);
   const history = useRef<{
-    past: ModelGraph[];
-    future: ModelGraph[];
+    past: { graph: ModelGraph; projectId: string | null }[];
+    future: { graph: ModelGraph; projectId: string | null }[];
     lastEdit: number;
   }>({ past: [], future: [], lastEdit: 0 });
   const flow = useReactFlow<LayerNodeType>();
@@ -197,7 +212,7 @@ export default function App() {
     if (changed.length) updateNodeInternals(changed);
   }, [viewGraph.nodes, analysis, updateNodeInternals]);
   const snapshot = useCallback(() => {
-    history.current.past.push(cleanGraph(graphRef.current));
+    history.current.past.push({ graph: cleanGraph(graphRef.current), projectId: projectIdRef.current });
     if (history.current.past.length > 70) history.current.past.shift();
     history.current.future = [];
     setHistoryVersion((v) => v + 1);
@@ -260,7 +275,6 @@ export default function App() {
   }, [exampleMenu]);
 
   const addNode = (kind: Kind, position?: { x: number; y: number }) => {
-    if (schematic) return;
     if (graph.nodes.length >= 300) {
       notice("A graph can contain up to 300 layers.", true);
       return;
@@ -277,12 +291,17 @@ export default function App() {
       point.x + Math.random() * 30,
       point.y + Math.random() * 30,
     );
-    commit({ ...graph, nodes: [...graph.nodes, layer] });
+    if (schematic) {
+      layer.data = { ...layer.data, output_shape: [1], parameter_count: 0, declaration_pending: true,
+        description: "New schematic block. Declare its output shape and parameter count." };
+      setScope("all");
+    }
+    commit(editedSchematic({ ...graph, nodes: [...graph.nodes, layer] }));
     select(layer.id);
     if (expanded) setExpanded(false);
     if (window.innerWidth <= 900) setShowLibrary(false);
     notice(
-      kind === "residual"
+      schematic ? "Block added to schematic. Set its declared shape and connect it." : kind === "residual"
         ? "Connect the skip path and a transformed branch. Both tensors must have matching shapes."
         : `${catalog[kind].title} added. Drag between ports to connect it.`,
     );
@@ -301,10 +320,10 @@ export default function App() {
         notice("A graph can contain up to 2,000 connections.", true);
         return;
       }
-      commit({
+      commit(editedSchematic({
         ...current,
         edges: [...current.edges, { id: crypto.randomUUID(), source, target }],
-      });
+      }));
     },
     [commit, notice],
   );
@@ -322,12 +341,11 @@ export default function App() {
   const deleteNode = useCallback(
     (id: string) => {
       const current = graphRef.current;
-      if (current.mode === "schematic") return;
-      commit({
+      commit(editedSchematic({
         ...current,
         nodes: current.nodes.filter((n) => n.id !== id),
         edges: current.edges.filter((e) => e.source !== id && e.target !== id),
-      });
+      }));
       setSelected(null);
     },
     [commit],
@@ -335,8 +353,7 @@ export default function App() {
   const disconnect = useCallback(
     (id: string) => {
       const current = graphRef.current;
-      if (current.mode === "schematic") return;
-      commit({ ...current, edges: current.edges.filter((e) => e.id !== id) });
+      commit(editedSchematic({ ...current, edges: current.edges.filter((e) => e.id !== id) }));
       setSelectedEdge(null);
     },
     [commit],
@@ -357,8 +374,17 @@ export default function App() {
       label: `${source.data.label} copy`.slice(0, 100),
       params: { ...source.data.params },
     };
-    commit({ ...graph, nodes: [...graph.nodes, copy] });
+    if (schematic) {
+      copy.data = { ...copy.data, parameter_tensors: [], declaration_pending: true };
+      setScope("all");
+    }
+    commit(editedSchematic({ ...graph, nodes: [...graph.nodes, copy] }));
     select(copy.id);
+  };
+  const updateSchematicNode = (id: string, patch: Partial<LayerNodeType["data"]>) => {
+    const current = graphRef.current;
+    const next = { ...current, nodes: current.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, ...patch } } : n) };
+    commit(Object.keys(patch).every(key => key === "label") ? next : editedSchematic(next), true, true);
   };
   const projectResidual = (id: string) => {
     if (engine.checking) {
@@ -409,23 +435,25 @@ export default function App() {
   const undo = useCallback(() => {
     const previous = history.current.past.pop();
     if (!previous) return;
-    history.current.future.push(cleanGraph(graphRef.current));
-    const measured = withNodeMeasurements(previous, graphRef.current);
+    history.current.future.push({ graph: cleanGraph(graphRef.current), projectId: projectIdRef.current });
+    const measured = withNodeMeasurements(previous.graph, graphRef.current);
     graphRef.current = measured;
     setGraph(measured);
     setHistoryVersion((v) => v + 1);
     select(null);
-  }, [select]);
+    changeProjectId(previous.projectId);
+  }, [select, changeProjectId]);
   const redo = useCallback(() => {
     const next = history.current.future.pop();
     if (!next) return;
-    history.current.past.push(cleanGraph(graphRef.current));
-    const measured = withNodeMeasurements(next, graphRef.current);
+    history.current.past.push({ graph: cleanGraph(graphRef.current), projectId: projectIdRef.current });
+    const measured = withNodeMeasurements(next.graph, graphRef.current);
     graphRef.current = measured;
     setGraph(measured);
     setHistoryVersion((v) => v + 1);
     select(null);
-  }, [select]);
+    changeProjectId(next.projectId);
+  }, [select, changeProjectId]);
   const saveFile = useCallback(() => {
     const current = graphRef.current;
     download(
@@ -445,7 +473,7 @@ export default function App() {
       }
       if ((event.metaKey || event.ctrlKey) && event.key === "s") {
         event.preventDefault();
-        saveFile();
+        window.dispatchEvent(new Event("vizml:save-project"));
         return;
       }
       if (
@@ -485,11 +513,11 @@ export default function App() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange<LayerNodeType>[]) => {
-      const changesToApply = changes.filter((c) => c.type !== "select" && !(graphRef.current.mode === "schematic" && c.type === "remove"));
+      const changesToApply = changes.filter((c) => c.type !== "select");
       if (!changesToApply.length) return;
       const current = graphRef.current;
       commit(
-        { ...current, nodes: applyNodeChanges(changesToApply, current.nodes) },
+        changesToApply.some(c => c.type === "remove") ? editedSchematic({ ...current, nodes: applyNodeChanges(changesToApply, current.nodes) }) : { ...current, nodes: applyNodeChanges(changesToApply, current.nodes) },
         false,
       );
     },
@@ -497,13 +525,13 @@ export default function App() {
   );
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      const changesToApply = changes.filter((c) => c.type !== "select" && !(graphRef.current.mode === "schematic" && c.type === "remove"));
+      const changesToApply = changes.filter((c) => c.type !== "select");
       if (changesToApply.length)
         commit(
-          {
+          editedSchematic({
             ...graphRef.current,
             edges: applyEdgeChanges(changesToApply, graphRef.current.edges),
-          },
+          }),
           false,
         );
     },
@@ -512,6 +540,7 @@ export default function App() {
   const loadExample = (key: string) => {
     const next = examples[key]();
     commit(next);
+    changeProjectId(null);
     select(null);
     setScope(preferredSnapshotScope(next));
     setExampleMenu(false);
@@ -622,7 +651,7 @@ export default function App() {
         </a>
         <div className="project-breadcrumb">
           <span className="topbar-divider" />
-          <span className="workspace-label">Workspace</span>
+          <span className="workspace-label">{projectId ? "Project" : "Workspace"}</span>
           <ChevronRight size={13} />
           <input
             aria-label="Architecture name"
@@ -638,6 +667,7 @@ export default function App() {
           >
             {saved ? <Check size={12} /> : <span className="saving-dot" />}
           </span>
+          {projectId && <span className="project-save-state" title="Browser autosave and the saved project are separate">{projectBaseline === null ? "Project open" : projectGraph === projectBaseline ? "Project saved" : "Unsaved changes"}</span>}
         </div>
         <div className="topbar-actions">
           <div className="theme-switch" role="group" aria-label="Color theme">
@@ -670,6 +700,11 @@ export default function App() {
             </button>
           </div>
           <span className="topbar-divider" />
+          <WorkspaceControls graph={graph} projectId={projectId} onProjectId={changeProjectId} onNotice={notice}
+            onSaved={(id, savedGraph) => { changeProjectId(id); setProjectBaseline(JSON.stringify(cleanGraph(savedGraph))); }}
+            onRename={name => commit({ ...graphRef.current, name })}
+            onNew={() => { commit(examples.blank()); changeProjectId(null); select(null); setScope("all"); setExpanded(false); }}
+            onOpen={(opened, id) => { commit(opened); changeProjectId(id); setProjectBaseline(JSON.stringify(cleanGraph(opened))); select(null); setScope(preferredSnapshotScope(opened)); setExpanded(false); setTimeout(fit, 100); }} />
           <div className="example-picker" ref={menu}>
             <button
               className={`quiet-button example-trigger ${exampleMenu ? "active" : ""}`}
@@ -679,17 +714,17 @@ export default function App() {
               Templates
               <ChevronDown size={12} />
             </button>
-            {exampleMenu && <TemplateMenu onLoad={loadExample} />}
+            {exampleMenu && <TemplateMenu graph={graph} onLoad={loadExample} onNotice={notice} onLoadSaved={opened => { commit(opened); changeProjectId(null); select(null); setScope(preferredSnapshotScope(opened)); setExampleMenu(false); setExpanded(false); setTimeout(fit, 100); notice("Template loaded. Save as a project to keep your changes."); }} />}
           </div>
           <span className="topbar-divider" />
           <CheckpointControls graph={graph} valid={!!analysis?.valid && !engine.checking} canBuild={canBuild && !engine.busy}
             onSave={saveFile} onPython={() => engine.request("export")} onNotice={notice}
-            onImport={imported => { commit(imported); select(null); setExpanded(false); setScope(preferredSnapshotScope(imported)); setTimeout(fit, 100); }} />
+            onImport={imported => { commit(imported); changeProjectId(null); select(null); setExpanded(false); setScope(preferredSnapshotScope(imported)); setTimeout(fit, 100); }} />
         </div>
       </header>
 
-      <div className={`workbench ${showLibrary && !schematic ? "" : "library-hidden"}`}>
-        {showLibrary && !schematic && <Library onAdd={addNode} />}
+      <div className={`workbench ${showLibrary ? "" : "library-hidden"}`}>
+        {showLibrary && <Library onAdd={addNode} schematic={schematic} />}
         <main className={`main-workspace ${expanded ? "model-expanded" : ""}`}>
           <ResizablePanels
             expanded={expanded}
@@ -720,7 +755,6 @@ export default function App() {
                   </select>}
                   {schematic && <button className="icon-button" aria-label="Inspect supplied schematic" title="Source descriptions and snapshot claims" onClick={() => { select(null); setShowSnapshotInfo(!showSnapshotInfo); }}><FileSearch size={14} /></button>}
                   <button
-                    disabled={schematic}
                     className={`quiet-button add-block-button ${showLibrary ? "active" : ""}`}
                     onClick={() => setShowLibrary(!showLibrary)}
                     aria-label="Add block"
@@ -843,7 +877,7 @@ export default function App() {
                         );
                     }}
                     minZoom={schematic ? 0.025 : 0.15}
-                    nodesConnectable={!schematic}
+                    nodesConnectable
                     maxZoom={1.7}
                     deleteKeyCode={null}
                     panOnScroll
@@ -895,7 +929,7 @@ export default function App() {
                   </button>
                 </div>
                 <span className="graph-instruction">
-                  {schematic ? `${viewGraph.nodes.length} of ${graph.nodes.length} nodes · supplied forward connections` : "Connect ports to declare dependencies"}
+                  {schematic ? `${viewGraph.nodes.length} of ${graph.nodes.length} nodes · edit declared connections` : "Connect ports to declare dependencies"}
                 </span>
               </div>
             </section>
@@ -907,6 +941,7 @@ export default function App() {
           graph={graph}
           analysis={analysis}
           onUpdate={updateNode}
+          onUpdateSchematic={updateSchematicNode}
           onSelect={select}
           onDelete={deleteNode}
           onDuplicate={duplicate}
@@ -985,7 +1020,7 @@ export default function App() {
                     <kbd>⌘ Z</kbd> Undo
                   </span>
                   <span>
-                    <kbd>⌘ S</kbd> Save
+                    <kbd>⌘ S</kbd> Save project
                   </span>
                   <span>
                     <kbd>F</kbd> Fit graph

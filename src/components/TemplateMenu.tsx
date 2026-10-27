@@ -1,13 +1,24 @@
-import { useState } from "react";
-import { ArrowUpRight, GitBranch, Plus, Search } from "lucide-react";
-import { templateInfo } from "../model";
+import { useEffect, useState } from "react";
+import { ArrowUpRight, GitBranch, Plus, Search, X } from "lucide-react";
+import { templateInfo, type ModelGraph } from "../model";
+import { deleteWorkspace, listWorkspace, openWorkspace, saveWorkspace, type WorkspaceItem } from "../workspace";
 
 export default function TemplateMenu({
-  onLoad,
+  onLoad, onLoadSaved, onNotice, graph,
 }: {
+  graph: ModelGraph;
   onLoad: (key: string) => void;
+  onLoadSaved: (graph: ModelGraph) => void;
+  onNotice: (message: string, error?: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [savedTemplates, setSavedTemplates] = useState<WorkspaceItem[]>([]);
+  const [workspaceError, setWorkspaceError] = useState("");
+  const [newName, setNewName] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const refresh = () => listWorkspace("templates").then(items => { setSavedTemplates(items); setWorkspaceError(""); }).catch(error => setWorkspaceError(error.message));
+  useEffect(() => { void refresh(); }, []);
+  const savedMatches = savedTemplates.filter(item => item.name.toLowerCase().includes(query.toLowerCase()));
   const starters = {
     multimodal: {
       title: "Vision + features",
@@ -72,6 +83,31 @@ export default function TemplateMenu({
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
+      <div className="template-save-current">
+        {newName === null ? <button className="quiet-button" onClick={() => setNewName(graph.name)}><Plus size={13} /> Save current as template</button> : <>
+          <label className="field-label" htmlFor="inline-template-name">Template name</label>
+          <input id="inline-template-name" className="text-field" value={newName} maxLength={100} onChange={e => setNewName(e.target.value)} />
+          <div className="schematic-actions"><button className="quiet-button" onClick={() => setNewName(null)}>Cancel</button><button className="quiet-button" disabled={saving || !newName.trim()} onClick={async () => {
+            setSaving(true);
+            try {
+              const metadata = { ...graph.metadata }; delete metadata.weights;
+              await saveWorkspace("templates", newName.trim(), { ...graph, metadata });
+              await refresh(); setNewName(null); onNotice("Template saved.");
+            } catch (e) { onNotice((e as Error).message, true); } finally { setSaving(false); }
+          }}>Save template</button></div>
+        </>}
+      </div>
+      {(savedMatches.length > 0 || workspaceError) && <section>
+        <div className="menu-eyebrow">Saved templates</div>
+        {workspaceError && <p className="workspace-empty">Saved templates unavailable: {workspaceError}</p>}
+        {savedMatches.map(item => <div className="saved-template-item" key={item.id}>
+          <button onClick={async () => { try { const result = await openWorkspace("templates", item.id); onLoadSaved({ ...result.graph, name: result.name }); } catch (e) { onNotice((e as Error).message, true); } }}><span className="example-icon"><GitBranch size={15}/></span><span><strong>{item.name}</strong><small>Saved template</small></span><ArrowUpRight size={12}/></button>
+          <button className="icon-button" aria-label={`Delete template ${item.name}`} onClick={async () => {
+            if (!window.confirm(`Delete saved template “${item.name}”?`)) return;
+            try { await deleteWorkspace("templates", item.id); await refresh(); onNotice("Template deleted."); } catch (e) { onNotice((e as Error).message, true); }
+          }}><X size={13}/></button>
+        </div>)}
+      </section>}
       {groups.map(([label, keys]) => {
         const matches = keys.filter((key) =>
           `${items[key].title} ${items[key].subtitle} ${label}`
@@ -102,7 +138,7 @@ export default function TemplateMenu({
           </section>
         );
       })}
-      {!found && <p className="no-results">No matching templates.</p>}
+      {!found && !savedMatches.length && <p className="no-results">No matching templates.</p>}
     </div>
   );
 }

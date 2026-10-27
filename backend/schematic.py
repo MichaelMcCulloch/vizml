@@ -81,9 +81,14 @@ def analyze_schematic(graph: Graph) -> dict:
     parameters = sum(n["parameters"] for n in results.values())
     declared_total = graph.metadata.get("parameter_counts", {})
     declared_total = declared_total.get("total") if isinstance(declared_total, dict) else None
-    if declared_total is not None and declared_total != parameters:
+    if not graph.metadata.get("source_edited") and declared_total is not None and declared_total != parameters:
         errors.append({"node_id": None, "message": f"Node parameter counts sum to {parameters:,}; metadata declares {declared_total}."})
     warnings.append({"node_id": None, "message": "Untrained architecture proposal: a standalone CNN encoder is provided. Game-specific featurization, entity assembly, action/outcome heads and PPG phase routing remain a descriptive integration contract; full-game execution is unavailable here." if graph.metadata.get("proposal") else "Descriptive schematic: operation meanings, shapes, and forward connections are supplied claims. Structural checks and tensor ownership do not verify the original forward implementation. PyTorch execution is unavailable for this diagram."})
+    if graph.metadata.get("source_edited"):
+        warnings.append({"node_id": None, "message": "This schematic has been edited. Original source metadata and statistics describe the original snapshot, not the edited diagram; declared shapes and counts must be reviewed."})
+    pending = [node.id for node in graph.nodes if node.data.model_dump().get("declaration_pending")]
+    if pending:
+        warnings.append({"node_id": None, "message": f"{len(pending)} new block(s) have placeholder shapes and counts; edit their declarations."})
     if symbolic:
         warnings.append({"node_id": None, "message": f"Symbolic dimensions remain visible in labels. 3D sampling and output-size estimates use L={symbols['L']}; this is not a fixed action count."})
     return {"valid": not errors, "executable": False, "basis": "declared", "nodes": results, "order": order,

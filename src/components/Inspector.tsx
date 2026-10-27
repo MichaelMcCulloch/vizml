@@ -30,6 +30,7 @@ type Props = {
   graph: ModelGraph;
   analysis: Analysis | null;
   onUpdate: (id: string, label: string, params: Params) => void;
+  onUpdateSchematic: (id: string, patch: Partial<LayerNode["data"]>) => void;
   onSelect: (id: string | null) => void;
   onDelete: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -169,6 +170,7 @@ export default function Inspector({
   graph,
   analysis,
   onUpdate,
+  onUpdateSchematic,
   onSelect,
   onDelete,
   onDuplicate,
@@ -178,7 +180,7 @@ export default function Inspector({
   onExpandStage,
   onSwapInputs,
 }: Props) {
-  if (graph.mode === "schematic") return <SchematicInspector node={node} graph={graph} analysis={analysis} onSelect={onSelect} overview={showSnapshotOverview} />;
+  if (graph.mode === "schematic") return <SchematicInspector node={node} graph={graph} analysis={analysis} onSelect={onSelect} overview={showSnapshotOverview} onUpdate={onUpdateSchematic} onDelete={onDelete} onDuplicate={onDuplicate} onDisconnect={onDisconnect} />;
   if (!node)
     return (
       <aside className="inspector">
