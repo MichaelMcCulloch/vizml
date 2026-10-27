@@ -147,9 +147,11 @@ function labelPairSprite(
   context.font = "500 32px ui-monospace, SFMono-Regular, Menlo, monospace";
   context.fillStyle = nameColor;
   context.fillText(name.slice(0, 40), 384, 46);
+  const nameWidth = context.measureText(name.slice(0, 40)).width;
   context.font = "500 27px ui-monospace, SFMono-Regular, Menlo, monospace";
   context.fillStyle = detailColor;
   context.fillText(detail.slice(0, 40), 384, 108);
+  const textWidth = Math.max(nameWidth, context.measureText(detail.slice(0, 40)).width);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(
@@ -161,6 +163,7 @@ function labelPairSprite(
   );
   sprite.scale.set(size * 9.6, size * 2.15, 1);
   sprite.userData.isLabel = true;
+  sprite.userData.textWidthFraction = Math.min(1, textWidth / canvas.width);
   return sprite;
 }
 
@@ -934,6 +937,7 @@ export default function Architecture({
       return new THREE.Vector3(offset[0], offset[1], offset[2]);
     };
     const layerGroups = new Map<string, THREE.Group>();
+    const nodeLabels: { id: string; sprite: THREE.Sprite }[] = [];
     const recurrentLoops = new Map<string, THREE.Vector3[][]>();
 
     for (const id of validNodes) {
@@ -1267,6 +1271,7 @@ export default function Architecture({
       );
       details.position.set(0, -3.0, 0);
       group.add(details);
+      nodeLabels.push({ id, sprite: details });
       if (isInput(node.data.kind) && (graph.mode !== "schematic" || !info.dependencies)) {
         const badge = labelSprite("INPUT", badgeInk, 0.4);
         badge.position.set(0, 2.75, 0);
@@ -1662,6 +1667,32 @@ export default function Architecture({
         if (object.userData.isLabel) object.visible = visible;
       });
     };
+    // Labels share screen space even when their nodes are separated in 3D.
+    // Keep the selected label and reveal additional non-overlapping labels as
+    // the camera zooms in, instead of drawing an unreadable wall of text.
+    const declutterLabels = () => {
+      if (!labelsValue.current) return;
+      const width = renderer.domElement.clientWidth, height = renderer.domElement.clientHeight;
+      if (!width || !height) return;
+      camera.updateMatrixWorld();
+      scene.updateMatrixWorld();
+      const occupied: { left: number; right: number; top: number; bottom: number }[] = [];
+      const ordered = [...nodeLabels].sort((a, b) => Number(b.id === selected) - Number(a.id === selected));
+      for (const { id, sprite } of ordered) {
+        const point = new THREE.Vector3();
+        sprite.getWorldPosition(point).project(camera);
+        const x = (point.x + 1) * width / 2, y = (1 - point.y) * height / 2;
+        const pixelScale = width * camera.zoom / (camera.right - camera.left);
+        const w = sprite.scale.x * pixelScale * sprite.userData.textWidthFraction + 8;
+        const h = sprite.scale.y * pixelScale * 0.72 + 4;
+        const box = { left: x - w / 2, right: x + w / 2, top: y - h / 2, bottom: y + h / 2 };
+        const visible = id === selected || (h >= 8 && point.z >= -1 && point.z <= 1 &&
+          box.right >= 0 && box.left <= width && box.bottom >= 0 && box.top <= height &&
+          !occupied.some(other => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top));
+        sprite.visible = visible;
+        if (visible) occupied.push(box);
+      }
+    };
     setLabelVisibility(labelsValue.current);
     api.current = {
       reset: () => {
@@ -1923,6 +1954,7 @@ export default function Architecture({
       previousTime = time;
       if (document.hidden) return;
       controls.update();
+      declutterLabels();
       if (flowingValue.current) flowTime.current += delta * flowSpeedValue.current;
       flowMaterial.uniforms.uTime.value = flowTime.current;
       renderer.render(scene, camera);
@@ -2007,7 +2039,7 @@ export default function Architecture({
               setLabels(!labels);
               api.current?.setLabels(!labels);
             }}
-            title="Toggle layer labels"
+            title="Toggle layer labels · zoom in to reveal more"
             aria-label="Toggle layer labels"
           >
             {labels ? <Eye size={14} /> : <EyeOff size={14} />}
