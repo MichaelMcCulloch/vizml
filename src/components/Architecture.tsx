@@ -48,6 +48,7 @@ type Props = {
   onSelect: (id: string) => void;
   expanded: boolean;
   onExpand: () => void;
+  branchScope?: { value: string; options: { id: string; label: string }[]; onChange: (id: string) => void };
 };
 type SceneAPI = {
   reset: () => void;
@@ -175,6 +176,7 @@ export default function Architecture({
   onSelect,
   expanded,
   onExpand,
+  branchScope,
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const api = useRef<SceneAPI | null>(null);
@@ -2019,6 +2021,10 @@ export default function Architecture({
           </span>
         </div>
         <div className="panel-tools">
+          {expanded && branchScope && <select className="snapshot-scope architecture-scope" aria-label="Focus model branch"
+            title="Focus both views on a model branch" value={branchScope.value} onChange={event => branchScope.onChange(event.target.value)}>
+            {branchScope.options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+          </select>}
           <button
             className={`icon-button ${flowing ? "active" : ""}`}
             onClick={() => setFlowing(!flowing)}

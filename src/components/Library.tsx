@@ -1,8 +1,8 @@
-import { Search, Plus, ArrowUpRight } from "lucide-react";
+import { Search, Plus, ArrowUpRight, X } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { catalog, type Kind } from "../model";
 
-export default function Library({ onAdd, schematic = false }: { onAdd: (kind: Kind) => void; schematic?: boolean }) {
+export default function Library({ onAdd, schematic = false, onClose }: { onAdd: (kind: Kind) => void; schematic?: boolean; onClose?: () => void }) {
   const [search, setSearch] = useState("");
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -28,7 +28,7 @@ export default function Library({ onAdd, schematic = false }: { onAdd: (kind: Ki
     <aside className="library">
       <div className="library-heading">
         <span>Building blocks</span>
-        <span className="count-tag">{Object.values(catalog).filter((item) => schematic || item.category !== "Snapshot").length}</span>
+        <span className="library-heading-actions"><span className="count-tag">{Object.values(catalog).filter((item) => schematic || item.category !== "Snapshot").length}</span>{onClose && <button className="icon-button" aria-label="Close building blocks" title="Close building blocks" onClick={onClose}><X size={14} /></button>}</span>
       </div>
       <div className="search-box">
         <Search size={14} />

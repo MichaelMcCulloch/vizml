@@ -111,3 +111,17 @@ test("parameter counts can be replaced and reject invalid declarations", () => {
   fireEvent.blur(count);
   expect(updates.at(-1)).toEqual({ parameter_count: 1024 });
 });
+
+test("expanded architecture exposes branch navigation and reports changes", async () => {
+  const { default: Architecture } = await import("../src/components/Architecture");
+  const graph = parseGraph(JSON.stringify({ version: 1, name: "Schematic", mode: "schematic", nodes: [], edges: [] }));
+  const changes: string[] = [];
+  const noop = () => {};
+  const props = { graph, analysis: null, theme: "light" as const, selected: null, onSelect: noop, onExpand: noop,
+    branchScope: { value: "all", options: [{id: "all", label: "Entire model"}, {id: "policy", label: "Policy"}], onChange: (value: string) => changes.push(value) } };
+  const view = render(<Architecture {...props} expanded={true} />);
+  fireEvent.change(screen.getByLabelText("Focus model branch"), { target: { value: "policy" } });
+  expect(changes).toEqual(["policy"]);
+  view.rerender(<Architecture {...props} expanded={false} />);
+  expect(screen.queryByLabelText("Focus model branch")).toBeNull();
+});

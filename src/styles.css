@@ -421,6 +421,8 @@ kbd {
   font-size: 12px;
   font-weight: 550;
 }
+.library-heading-actions { display: flex; align-items: center; gap: 6px; }
+.library-heading-actions .icon-button { width: 25px; height: 25px; }
 .count-tag {
   font: 10px var(--mono);
   color: rgb(var(--tone-7-rgb));
@@ -793,11 +795,14 @@ kbd {
   color: rgb(var(--tone-9-rgb));
 }
 @container architecture (max-width: 580px) {
+  .architecture-panel:has(.architecture-scope) .flow-speed { display: none; }
   .live-badge {
     display: none;
   }
 }
 @container architecture (max-width: 460px) {
+  .architecture-panel .architecture-scope { max-width: 105px; }
+  .architecture-panel:has(.architecture-scope) .flow-speed > span { display: none; }
   .flow-speed > span {
     display: none;
   }
@@ -806,6 +811,8 @@ kbd {
   }
 }
 @container architecture (max-width: 380px) {
+  .architecture-panel:has(.architecture-scope) .flow-speed { display: none; }
+  .architecture-panel .architecture-scope { max-width: 90px; }
   .panel-title > span:first-of-type {
     display: none;
   }

@@ -724,7 +724,7 @@ export default function App() {
       </header>
 
       <div className={`workbench ${showLibrary ? "" : "library-hidden"}`}>
-        {showLibrary && <Library onAdd={addNode} schematic={schematic} />}
+        {showLibrary && <Library onAdd={addNode} schematic={schematic} onClose={() => setShowLibrary(false)} />}
         <main className={`main-workspace ${expanded ? "model-expanded" : ""}`}>
           <ResizablePanels
             expanded={expanded}
@@ -737,6 +737,7 @@ export default function App() {
                 onSelect={select}
                 expanded={expanded}
                 onExpand={() => setExpanded(!expanded)}
+                branchScope={schematic ? { value: scope, options: scopes, onChange: value => { setScope(value); select(null); setTimeout(fit, 80); } } : undefined}
               />
             }
           >
