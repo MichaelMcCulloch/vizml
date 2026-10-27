@@ -238,3 +238,17 @@ def test_disabling_layerscale_removes_its_parameters():
 def test_convnext_parameter_constraints(params):
     spec = graph([node("x", "grid_input"), node("stage", "convnext_stage", **params), node("features", "embedding")], [("x", "stage"), ("stage", "features")])
     assert not analyze(spec)["valid"]
+
+
+def test_dense_bias_option_matches_parameter_count_and_generated_torch():
+    spec = graph([node("x", "feature_input", features=3), node("hidden", "dense", units=4, bias=0), node("out", "regression", units=1)], [("x", "hidden"), ("hidden", "out")])
+    result = analyze(spec)
+    assert result["valid"]
+    assert result["nodes"]["hidden"]["parameters"] == 12
+    assert compile_meta(spec)["parameters"] == result["parameters"]
+    namespace = {"__name__": "test_generated"}
+    exec(export_python(spec), namespace)
+    model = namespace["build_model"]("cpu")
+    assert model.layers[model.keys["hidden"]][1].bias is None
+    spec.nodes[1].data.params["bias"] = 2
+    assert not analyze(spec)["valid"]

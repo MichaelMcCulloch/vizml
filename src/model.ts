@@ -181,7 +181,7 @@ export const catalog: Record<Kind, Definition> = {
     category: "Layers",
     color: "#baabec",
     symbol: "⋈",
-    defaults: { units: 64, activation: "relu" },
+    defaults: { units: 64, activation: "relu", bias: 1 },
   },
   maxpool2d: {
     title: "Max pooling",

@@ -99,7 +99,8 @@ def infer_node(node: GraphNode, incoming: list[list[int]], infos: list[dict] | N
             shape = [shape[0], integer(node, "height", 45, high=4096), integer(node, "width", 49, high=4096)]
         elif kind in {"dense", "classification", "regression"}:
             size = integer(node, "units", 64 if kind == "dense" else (10 if kind == "classification" else 1))
-            params = (prod(shape) + 1) * size
+            bias = integer(node, "bias", 1, 0, 1) if kind == "dense" else 1
+            params = (prod(shape) + bias) * size
             shape = [size]
         elif kind == "flatten":
             shape = [prod(shape)]

@@ -55,7 +55,7 @@ test_frontend:
   script:
     - bun install --frozen-lockfile
     - bun run build
-    - bun test scripts/server.test.ts scripts/connections.test.ts scripts/graph-view.test.ts scripts/recurrent.test.ts
+    - bun test scripts/server.test.ts scripts/connections.test.ts scripts/graph-view.test.ts scripts/recurrent.test.ts scripts/architecture-semantics.test.ts
     - cp "$(command -v bun)" bun-ci
   artifacts:
     paths: [bun-ci]

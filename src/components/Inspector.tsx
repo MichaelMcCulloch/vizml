@@ -329,6 +329,9 @@ export default function Inspector({
             </div>
           </div>
         )}
+        {kind === "dense" && <div className="inspector-section">
+          <label className="resize-corners"><input type="checkbox" checked={Number(params.bias ?? 1) !== 0} onChange={e => change("bias", e.target.checked ? 1 : 0)} /> Learned bias</label>
+        </div>}
         {kind === "upsample2d" && <div className="inspector-section">
           <label className="field-label" htmlFor="resize-mode">Interpolation</label>
           <select className="text-field" id="resize-mode" value={params.mode ?? "bilinear"} onChange={e => change("mode", e.target.value)}>

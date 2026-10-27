@@ -23,6 +23,7 @@ import {
   type ModelGraph,
 } from "../model";
 import { sequenceGeometry } from "./sequenceGeometry";
+import { architectureGlyph, concatSegments, hasLearnedBias, straightChains } from "./architectureSemantics";
 import { recurrentGeometry, recurrentMetrics, spatialScale, type SpatialFace } from "./recurrentGeometry";
 import {
   connectionExtent,
@@ -304,7 +305,7 @@ export default function Architecture({
     const viewStart = graph.mode === "schematic" ? Math.min(...depths.values()) : firstDepth;
     if (Number.isFinite(viewStart)) for (const [id, depth] of depths) depths.set(id, depth - viewStart);
     const maxDepth = Math.max(1, ...depths.values());
-    const spacing = 2.55;
+    const spacing = 4.5;
     const depthX = new Map<number, number>();
     if (graph.template?.startsWith("dinov3_convnext_")) {
       let cursor = 0;
@@ -406,6 +407,7 @@ export default function Architecture({
     const layoutFamily = (id: string) => {
       const info = analysis.nodes[id];
       if (!info) return "other";
+      if (architectureGlyph(byId.get(id)!.data.kind) === "dense") return "vector";
       if (info.layout === "streams" || info.shape.length === 2)
         return "sequence";
       if (info.shape.length === 3 || info.shape.length === 4) return "spatial";
@@ -704,7 +706,7 @@ export default function Architecture({
       for (const edge of incoming) {
         if (edge.source === dominant) continue;
         const source = byId.get(edge.source);
-        if (!source || source.data.kind !== "dense") continue;
+        if (!source || source.data.kind !== "dense" || !/bias|condition/i.test(`${source.data.label} ${source.data.params.role ?? ""}`)) continue;
         if ((flowChildren.get(edge.source)?.length ?? 0) > 0) continue;
         if (parkedAt.has(edge.source)) continue;
         const targetPoint = pointFor(targetId);
@@ -868,6 +870,26 @@ export default function Architecture({
       }
     }
 
+    // Relaxation places the lanes; explicit unbranched chains then share one
+    // centerline so CNN and fully connected stacks read as coherent sequences.
+    for (const chain of straightChains(validNodes, graph.edges, id => {
+      const kind = byId.get(id)!.data.kind;
+      if (!["other", "dense", "normalize"].includes(architectureGlyph(kind))) return "other";
+      return layoutFamily(id);
+    })) {
+      const points = chain.map(id => positions.get(id)!);
+      const y = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+      const z = points.reduce((sum, point) => sum + point.z, 0) / points.length;
+      for (const point of points) { point.y = y; point.z = z; }
+    }
+    // Condition/bias projections remain attached to their add after relaxation.
+    for (const [id] of parkedAt) {
+      const edge = graph.edges.find(e => e.source === id && ["add", "residual"].includes(byId.get(e.target)?.data.kind ?? ""));
+      const target = edge && positions.get(edge.target);
+      const point = positions.get(id);
+      if (target && point) { point.x = target.x - 1.2; point.y = target.y; point.z = target.z - halfWidthOf(edge!.target) - 1.5; }
+    }
+
     const layoutPoint = (id: string) =>
       positions.get(id) ?? parkedAt.get(id) ?? pointFor(id);
     let maxAbsZ = 0;
@@ -914,7 +936,11 @@ export default function Architecture({
       const group = new THREE.Group();
       group.position.copy(point).add(manualOffset(id));
       layerGroups.set(id, group);
-      const color = displayColor(catalog[node.data.kind].color, theme);
+      const glyph = architectureGlyph(node.data.kind);
+      const terminal = !hasOutgoing.has(id);
+      const nodeColor = isInput(node.data.kind) || (terminal && (isOutput(node.data.kind) || glyph === "dense"))
+        ? "#e3b74f" : glyph === "dense" ? "#ad78df" : catalog[node.data.kind].color;
+      const color = displayColor(nodeColor, theme);
       const focused = selected === id;
       const opacity = selected && !focused ? 0.72 : 1;
       const material = new THREE.MeshStandardMaterial({
@@ -928,7 +954,57 @@ export default function Architecture({
         depthWrite: false,
         side: THREE.DoubleSide,
       });
-      if (isRecurrent(node.data.kind)) {
+      if (["concat", "add", "gather", "dot", "normalize", "pool", "activation", "embedding"].includes(glyph)) {
+        // These are operators, not output tensors: show the same glyph at every rank.
+        const opMaterial = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.16, roughness: 0.4 });
+        const addMesh = (geometry: THREE.BufferGeometry, x = 0, y = 0, z = 0) => {
+          const mesh = new THREE.Mesh(geometry, opMaterial);
+          mesh.position.set(x, y, z); mesh.userData.nodeId = id; meshes.push(mesh); group.add(mesh);
+          return mesh;
+        };
+        if (glyph === "concat") {
+          addMesh(new THREE.BoxGeometry(0.18, 4, 0.22));
+          const incoming = graph.edges.filter(e => e.target === id && byId.has(e.source));
+          const segments = concatSegments(incoming.map(e => {
+            const shape = analysis.nodes[e.source]?.shape ?? [];
+            const axis = node.data.params.axis;
+            return Number((axis === "channels" || (analysis.nodes[id]?.shape.length ?? 0) >= 3) && shape.length >= 3 ? shape.at(-3) : shape.at(-1)) || 1;
+          }));
+          for (const [, end] of segments.slice(0, -1))
+            addMesh(new THREE.BoxGeometry(0.22, 0.025, 0.34), 0, 2 - end * 4, 0);
+          halfDepth.set(id, 0.09);
+        } else if (glyph === "add") {
+          addMesh(new THREE.TorusGeometry(0.5, 0.065, 8, 32));
+          addMesh(new THREE.BoxGeometry(0.08, 0.65, 0.1));
+          addMesh(new THREE.BoxGeometry(0.65, 0.08, 0.1));
+          halfDepth.set(id, 0.12);
+        } else if (glyph === "gather") {
+          // A slotted bracket suggests selection from a larger collection.
+          addMesh(new THREE.BoxGeometry(0.12, 2.4, 0.12));
+          addMesh(new THREE.BoxGeometry(0.55, 0.12, 0.12), 0.22, 1.15);
+          addMesh(new THREE.BoxGeometry(0.55, 0.12, 0.12), 0.22, -1.15);
+          for (let i = -1; i <= 1; i++) addMesh(new THREE.SphereGeometry(0.13, 10, 8), 0.3, i * 0.55);
+          halfDepth.set(id, 0.55);
+        } else if (glyph === "dot") {
+          addMesh(new THREE.IcosahedronGeometry(0.38, 0));
+          halfDepth.set(id, 0.38);
+        } else if (glyph === "normalize") {
+          // A framed wave denotes rescaling, distinct from neuron columns.
+          addMesh(new THREE.TorusGeometry(0.55, 0.045, 8, 4)).rotation.z = Math.PI / 4;
+          for (let i = 0; i < 3; i++) addMesh(new THREE.BoxGeometry(0.38, 0.05, 0.08), 0, (i - 1) * 0.2);
+          halfDepth.set(id, 0.15);
+        } else if (glyph === "pool") {
+          addMesh(new THREE.ConeGeometry(0.6, 1.15, 4, 1, true)).rotation.z = -Math.PI / 2;
+          halfDepth.set(id, 0.6);
+        } else if (glyph === "activation") {
+          addMesh(new THREE.CapsuleGeometry(0.22, 0.65, 4, 8)).rotation.z = Math.PI / 2;
+          halfDepth.set(id, 0.55);
+        } else {
+          for (let row = -1; row <= 1; row++) for (let col = -1; col <= 1; col++)
+            addMesh(new THREE.BoxGeometry(0.12, 0.18, 0.18), 0, row * 0.28, col * 0.28);
+          halfDepth.set(id, 0.12);
+        }
+      } else if (isRecurrent(node.data.kind)) {
         const glyph = recurrentGeometry(group, node, info, color, focused, meshes, opacity);
         if (glyph.ports) neurons.set(id, glyph.ports);
         if (glyph.inputPorts) inputNeurons.set(id, glyph.inputPorts);
@@ -939,9 +1015,9 @@ export default function Architecture({
         badge.position.set(0, Math.max(2.35, glyph.radius + 0.4), 0);
         group.add(badge);
       } else if (
-        info.shape.length === 2 ||
+        glyph !== "dense" && (info.shape.length === 2 ||
         info.layout === "streams" ||
-        node.data.kind === "token_input"
+        node.data.kind === "token_input")
       ) {
         const positions = sequenceGeometry(
           group,
@@ -970,7 +1046,7 @@ export default function Architecture({
         } else {
           halfDepth.set(id, 0.05);
         }
-      } else if (info.shape.length === 3 || info.shape.length === 4) {
+      } else if (glyph !== "dense" && (info.shape.length === 3 || info.shape.length === 4)) {
         const [channels, h, w] = info.shape.slice(-3);
         const height = spatialScale(h),
           width = spatialScale(w);
@@ -1102,7 +1178,7 @@ export default function Architecture({
           group.add(plus);
         }
       } else {
-        const count = Math.max(1, Math.min(13, info.shape[0]));
+        const count = Math.max(1, Math.min(13, glyph === "dense" ? info.shape.at(-1)! : info.shape[0]));
         const height = isOutput(node.data.kind) ? 2.2 : 3.2;
         halfDepth.set(id, 0.15);
         const positions: THREE.Vector3[] = [];
@@ -1146,6 +1222,16 @@ export default function Architecture({
           group.add(halos);
         }
         neurons.set(id, positions);
+        if (glyph === "dense" && hasLearnedBias(node, graph.mode === "schematic")) {
+          const biases = new THREE.InstancedMesh(new THREE.SphereGeometry(0.038, 10, 8),
+            new THREE.MeshStandardMaterial({ color: "#268fff", emissive: "#268fff", emissiveIntensity: 0.5 }), count);
+          const marker = new THREE.Object3D();
+          positions.forEach((position, i) => {
+            marker.position.copy(position).add(new THREE.Vector3(0.025, 0.025, 0.067));
+            marker.updateMatrix(); biases.setMatrixAt(i, marker.matrix);
+          });
+          biases.instanceMatrix.needsUpdate = true; group.add(biases);
+        }
       }
       const block = graph.mode === "schematic" ? node.id.match(/_block(\d+)_(conv1|conv2|add)$/) : null;
       const shortName = typeof node.data.view_label === "string" ? node.data.view_label : block ? `B${block[1]} · ${block[2] === "add" ? "Add" : `${block[2] === "conv1" ? "Conv 1" : "Conv 2"} · d${node.data.params.dilation}`}` : node.data.label;
@@ -1277,15 +1363,16 @@ export default function Architecture({
       source: THREE.Vector3[],
       target: THREE.Vector3[],
       appearance: FlowAppearance,
+      exactStart = false,
+      exactEnd = false,
     ) => {
       if (!source.length || !target.length) return;
-      const start = connectionExtent(source);
-      const end = connectionExtent(target);
-      for (const extent of [start, end]) {
-        const middle = extent.top.clone().add(extent.bottom).multiplyScalar(0.5);
-        extent.top.lerp(middle, 0.28);
-        extent.bottom.lerp(middle, 0.28);
-      }
+      const exactExtent = (points: THREE.Vector3[]) => {
+        const ordered = [...points].sort((a, b) => b.y - a.y);
+        return { top: ordered[0].clone(), bottom: ordered[ordered.length - 1].clone() };
+      };
+      const start = exactStart ? exactExtent(source) : connectionExtent(source);
+      const end = exactEnd ? exactExtent(target) : connectionExtent(target);
       const top = makeConnectionCurve(start.top, end.top, 0.18).getPoints(28);
       const bottom = makeConnectionCurve(start.bottom, end.bottom, 0.18).getPoints(28);
       const { progress } = pathProgress(top.map((point, i) =>
@@ -1365,7 +1452,39 @@ export default function Architecture({
         endColor: tint ?? (residual ? color : displayColor(catalog[target.data.kind].color, theme)),
         opacity: opacity * focus,
       });
-      if (
+      const sourceGlyph = architectureGlyph(byId.get(edge.source)!.data.kind);
+      const targetGlyph = architectureGlyph(target.data.kind);
+      if (sourceGlyph === "concat" || targetGlyph === "concat") {
+        const extent = (center: THREE.Vector3, points: THREE.Vector3[] | undefined, spatial: SpatialFace | undefined) => {
+          if (points?.length) return points;
+          const height = spatial?.dimensions[0] ?? 1.2;
+          return [center.clone().add(new THREE.Vector3(0, height / 2, 0)), center.clone().add(new THREE.Vector3(0, -height / 2, 0))];
+        };
+        const bar = (center: THREE.Vector3, start: number, end: number) => [
+          center.clone().add(new THREE.Vector3(0, 2 - 4 * start, 0)),
+          center.clone().add(new THREE.Vector3(0, 2 - 4 * end, 0)),
+        ];
+        let from = extent(aFace, an, sourceSpatialFace);
+        let to = extent(bFace, bn, targetSpatialFace);
+        if (sourceGlyph === "concat") from = bar(aFace, 0, 1);
+        if (targetGlyph === "concat") {
+          const incoming = graph.edges.filter(e => e.target === edge.target && byId.has(e.source));
+          const segments = concatSegments(incoming.map(e => {
+            const shape = analysis.nodes[e.source]?.shape ?? [];
+            return Number((target.data.params.axis === "channels" || analysis.nodes[target.id].shape.length >= 3) && shape.length >= 3 ? shape.at(-3) : shape.at(-1)) || 1;
+          }));
+          const index = incoming.indexOf(edge);
+          const [start, end] = segments[index] ?? [0, 1];
+          to = bar(bFace, start, end);
+        }
+        addRibbon(group, from, to, appearance(theme === "light" ? 0.24 : 0.17), sourceGlyph === "concat", targetGlyph === "concat");
+        if (sourceGlyph === "concat" && targetGlyph === "dense" && bn &&
+            (graph.mode !== "schematic" || analysis.nodes[target.id].parameters > 0)) {
+          const samples = Array.from({ length: 13 }, (_, i) => aFace.clone().add(new THREE.Vector3(0, 2 - i * 4 / 12, 0)));
+          addSplineBatch(group, samples.flatMap(start => bn.map(end => makeConnectionCurve(start, end, 0).getPoints(16))),
+            appearance(theme === "light" ? 0.20 : 0.15));
+        }
+      } else if (
         analysis.nodes[edge.source].layout === "streams" &&
         analysis.nodes[edge.target].layout === "streams"
       ) {
@@ -1389,18 +1508,18 @@ export default function Architecture({
         label.position.y += 0.35;
         label.visible = labelsValue.current;
         group.add(label);
+      } else if (bn && !residual && targetGlyph === "dense" &&
+          (graph.mode !== "schematic" || analysis.nodes[target.id].parameters > 0)) {
+        // Sample flattened spatial inputs too: every shown source connects to
+        // every shown target, but these threads are not actual weight values.
+        const sourceCount = Math.max(1, Math.min(13, analysis.nodes[edge.source].elements || 1));
+        const height = sourceSpatialFace?.dimensions[0] ?? 2.4;
+        const samples = an ?? Array.from({ length: sourceCount }, (_, i) =>
+          aFace.clone().add(new THREE.Vector3(0, sourceCount === 1 ? 0 : (i / (sourceCount - 1) - 0.5) * height, 0)));
+        addSplineBatch(group, samples.flatMap(start => bn.map(end =>
+          makeConnectionCurve(start, end, 0).getPoints(16))),
+          appearance(theme === "light" ? 0.20 : 0.15));
       } else if (an && bn && !residual) {
-        if (
-          ["dense", "classification", "regression"].includes(target.data.kind) &&
-          (graph.mode !== "schematic" || analysis.nodes[target.id].parameters > 0)
-        ) {
-          addRibbon(
-            group,
-            an,
-            bn,
-            appearance(theme === "light" ? 0.065 : 0.05),
-          );
-        } else {
           const pairs = pairConnectionPorts(an, bn);
           addSplineBatch(
             group,
@@ -1409,7 +1528,6 @@ export default function Architecture({
             ),
             appearance(theme === "light" ? 0.22 : 0.16),
           );
-        }
       } else if (residual) {
         const curve = makeConnectionCurve(aFace, bFace, 4.2);
         const geometry = new THREE.TubeGeometry(curve, 48, 0.025, 6, false);
@@ -1501,9 +1619,9 @@ export default function Architecture({
 
     const reset = () => {
       camera.position.set(
-        centerX + sceneExtent * 0.78,
-        centerY + sceneExtent * 0.22,
-        centerZ + sceneExtent * 0.55,
+        centerX + sceneExtent * 0.18,
+        centerY + sceneExtent * 0.12,
+        centerZ + sceneExtent * 1.0,
       );
       controls.target.set(centerX, centerY, centerZ);
       camera.zoom = 1;
@@ -1931,8 +2049,10 @@ export default function Architecture({
         </span>
         <span>
           <i className="legend-dot" style={{ background: "#baabec" }} />
-          Dense
+          Hidden · sampled neurons
         </span>
+        <span><i className="legend-dot" style={{ background: "#e3b74f" }} /> Input / output</span>
+        <span><i className="legend-dot" style={{ background: "#268fff" }} /> Bias</span>
         <span>
           <i className="legend-dot" style={{ background: "#e8a286" }} />
           Composition

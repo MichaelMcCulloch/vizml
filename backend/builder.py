@@ -125,7 +125,7 @@ class VisualModel(nn.Module):
                     count = 1
                     for dimension in info["input_shape"]:
                         count *= dimension
-                    layer = nn.Sequential(nn.Flatten(1), nn.Linear(count, size))
+                    layer = nn.Sequential(nn.Flatten(1), nn.Linear(count, size, bias=bool(p.get("bias", 1)) if kind == "dense" else True))
                     if kind == "dense":
                         layer.append(activation(p.get("activation", "relu")))
                 elif kind == "flatten":
