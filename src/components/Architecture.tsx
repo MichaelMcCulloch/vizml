@@ -1759,6 +1759,10 @@ export default function Architecture({
         const baseScale = sprite.userData.baseScale as THREE.Vector3;
         const scale = Math.max(1, 40 / (baseScale.y * pixelScale));
         sprite.scale.copy(baseScale).multiplyScalar(scale);
+        // Grow downward from the original label position so that enlarged
+        // overview text does not cover the layer it describes.
+        sprite.position.y = -3 - (sprite.scale.y - baseScale.y) / 2;
+        sprite.updateMatrixWorld();
         const point = new THREE.Vector3();
         sprite.getWorldPosition(point).project(camera);
         const x = (point.x + 1) * width / 2, y = (1 - point.y) * height / 2;
