@@ -13,6 +13,7 @@ export function separateAlignedPaths(
   radius: (id: string) => number,
   excluded: Set<string> = new Set(),
   grid = 2,
+  footprint?: (id: string) => { left: number; right: number },
 ): void {
   const grouped = new Set(chains.flat());
   const groups = [
@@ -30,7 +31,10 @@ export function separateAlignedPaths(
     const preferredZ = Math.round(avg("z") * 0.3 / grid);
     const available = (y: number, z: number) => placed.every(other => group.every(id => other.every(otherId => {
       const p = positions.get(id)!, q = positions.get(otherId)!;
-      if (Math.abs(p.x - q.x) > grid * 0.5) return true;
+      if (footprint) {
+        const a = footprint(id), b = footprint(otherId);
+        if (p.x + a.right + 0.35 <= q.x - b.left || q.x + b.right + 0.35 <= p.x - a.left) return true;
+      } else if (Math.abs(p.x - q.x) > grid * 0.5) return true;
       const clearance = Math.max(3.5, radius(id) + radius(otherId) + 1.5);
       return Math.hypot(y - q.y, z - q.z) >= clearance;
     })));

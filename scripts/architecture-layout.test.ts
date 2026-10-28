@@ -44,6 +44,17 @@ test("automatic placement uses the manual two-unit grid and compacts sparse lane
   expect(positions.get("a")!.z).toBe(positions.get("b")!.z);
 });
 
+test("wide glyphs in adjacent columns do not overlap unrelated paths", () => {
+  const positions = new Map([
+    ["a", {x: 0, y: 0, z: 0}], ["b", {x: 2, y: 0, z: 0}],
+  ]);
+  separateAlignedPaths(["a", "b"], [], positions, () => 0.25, new Set(), 2,
+    id => id === "b" ? {left: 1.85, right: 0.15} : {left: 0.15, right: 0.15});
+  const a = positions.get("a")!, b = positions.get("b")!;
+  expect(Math.hypot(a.y - b.y, a.z - b.z)).toBeGreaterThanOrEqual(3.5);
+  expect([a.x, b.x]).toEqual([0, 2]);
+});
+
 test("packs independent branches without widening every depth for one large glyph", () => {
   const edges = [
     {source:"a", target:"b"}, {source:"b", target:"c"}, {source:"c", target:"d"},

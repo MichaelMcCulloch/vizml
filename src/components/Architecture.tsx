@@ -679,13 +679,14 @@ export default function Architecture({
     }
     // Pack each path independently instead of widening an entire depth when
     // one unrelated branch needs room for an MLP input column.
-    const gridX = compactGridColumns(validNodes, graph.edges, id => {
+    const footprint = (id: string) => {
       const glyph = architectureGlyph(byId.get(id)!.data.kind);
       const operatorDepth = glyph === "gather" || glyph === "activation" ? 0.55
         : glyph === "pool" ? 0.6 : glyph === "dot" ? 0.38 : undefined;
       const half = operatorDepth ?? halfDepth.get(id) ?? 0.15;
       return { left: half + (needsInputColumn(id) ? 1.7 : 0), right: half };
-    }, SNAP_STEP);
+    };
+    const gridX = compactGridColumns(validNodes, graph.edges, footprint, SNAP_STEP);
     const maxX = Math.max(1, ...gridX.values());
     const pointFor = (id: string) => {
       const depth = depths.get(id)!;
@@ -896,7 +897,7 @@ export default function Architecture({
       if (["concat", "add", "gather", "dot"].includes(glyph) || parkedAt.has(id)) return "other";
       return layoutFamily(id);
     });
-    separateAlignedPaths(validNodes, chains, positions, halfWidthOf, new Set(parkedAt.keys()), SNAP_STEP);
+    separateAlignedPaths(validNodes, chains, positions, halfWidthOf, new Set(parkedAt.keys()), SNAP_STEP, footprint);
     // Keep side inputs visible below and behind the operation they affect.
     const attachments = [...parkedAt.keys()].flatMap(id => {
       const edge = graph.edges.find(e => e.source === id && ["add", "residual"].includes(byId.get(e.target)?.data.kind ?? ""));
