@@ -122,8 +122,11 @@ test("expanded architecture exposes branch navigation and reports changes", asyn
   const view = render(<Architecture {...props} expanded={true} />);
   fireEvent.change(screen.getByLabelText("Focus model branch"), { target: { value: "policy" } });
   expect(changes).toEqual(["policy"]);
+  view.rerender(<Architecture {...props} selected="node" expanded={true} />);
+  expect(screen.getByRole("button", {name: "Focus selected layer"})).toBeTruthy();
   view.rerender(<Architecture {...props} expanded={false} />);
   expect(screen.queryByLabelText("Focus model branch")).toBeNull();
+  expect(screen.queryByRole("button", {name: "Focus selected layer"})).toBeNull();
 });
 
 test("project save state recovers after reload and ignores stale requests", async () => {

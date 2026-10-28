@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   Box,
+  Focus,
   RotateCcw,
   Rotate3D,
   Maximize2,
@@ -52,6 +53,7 @@ type Props = {
 };
 type SceneAPI = {
   reset: () => void;
+  focusSelected: () => void;
   resetLayout: () => void;
   setRotate: (enabled: boolean) => void;
   setLabels: (enabled: boolean) => void;
@@ -1710,6 +1712,21 @@ export default function Architecture({
         reset();
         renderer.render(scene, camera);
       },
+      focusSelected: () => {
+        if (!selected) return;
+        const point = worldPoint(selected);
+        if (!point) return;
+        // Keep the current viewing direction while moving the orbit center
+        // to the chosen glyph and framing it with nearby connections.
+        point.y -= 0.5;
+        camera.position.add(point.clone().sub(controls.target));
+        controls.target.copy(point);
+        const width = Math.max(14, halfWidthOf(selected) * 4 + 8);
+        camera.zoom = THREE.MathUtils.clamp((camera.right - camera.left) / width, 0.8, 6);
+        camera.updateProjectionMatrix();
+        controls.update();
+        renderer.render(scene, camera);
+      },
       resetLayout: () => {
         readout.hidden = true;
         for (const id of Object.keys(manual)) delete manual[id];
@@ -2070,6 +2087,12 @@ export default function Architecture({
           >
             <Rotate3D size={15} />
           </button>
+          {selected && <button
+            className="icon-button"
+            onClick={() => api.current?.focusSelected()}
+            title="Focus selected layer"
+            aria-label="Focus selected layer"
+          ><Focus size={14} /></button>}
           <button
             className="icon-button"
             onClick={() => api.current?.reset()}
