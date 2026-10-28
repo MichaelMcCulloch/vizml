@@ -1469,14 +1469,41 @@ export function autoLayout(
       }
     }
   }
-  const lanes: Record<number, number> = {};
+  const level = new Map(graph.nodes.map(n => [n.id, analysis?.nodes[n.id]?.depth ?? depths.get(n.id) ?? 0]));
+  const rows = new Map<string, number>();
+  const parents = new Map(graph.nodes.map(n => [n.id, graph.edges.filter(e => e.target === n.id).map(e => e.source)]));
+  const children = new Map(graph.nodes.map(n => [n.id, graph.edges.filter(e => e.source === n.id).map(e => e.target)]));
+  const levels = [...new Set(level.values())].sort((a, b) => a - b);
+  for (const depth of levels) {
+    const occupied = new Set<number>();
+    const nodes = graph.nodes.filter(n => level.get(n.id) === depth);
+    // Give unbranched continuations first choice of their parent's row.
+    nodes.sort((a, b) => {
+      const straight = (id: string) => {
+        const incoming = parents.get(id) ?? [];
+        return incoming.length === 1 && (children.get(incoming[0])?.length ?? 0) === 1 ? 1 : 0;
+      };
+      return straight(b.id) - straight(a.id) || a.position.y - b.position.y;
+    });
+    for (const node of nodes) {
+      const incoming = (parents.get(node.id) ?? []).map(id => rows.get(id)).filter((row): row is number => row !== undefined);
+      incoming.sort((a, b) => a - b);
+      const desired = incoming.length ? incoming[Math.floor(incoming.length / 2)] : 0;
+      let row = desired;
+      for (let distance = 1; occupied.has(row); distance++) {
+        if (!occupied.has(desired + distance)) row = desired + distance;
+        else if (!occupied.has(desired - distance)) row = desired - distance;
+      }
+      occupied.add(row);
+      rows.set(node.id, row);
+    }
+  }
+  const minRow = Math.min(0, ...rows.values());
   return {
     ...graph,
     nodes: graph.nodes.map((n) => {
-      const depth = analysis?.nodes[n.id]?.depth ?? depths.get(n.id) ?? 0;
-      const lane = lanes[depth] ?? 0;
-      lanes[depth] = lane + 1;
-      return { ...n, position: { x: depth * 250, y: lane * 200 + 40 } };
+      const depth = level.get(n.id) ?? 0;
+      return { ...n, position: { x: depth * 250, y: ((rows.get(n.id) ?? 0) - minRow) * 200 + 40 } };
     }),
   };
 }

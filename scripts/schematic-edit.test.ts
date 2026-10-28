@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { autoLayoutSubset, canConnect, editedSchematic, insertDenseAfter, parseGraph, type ModelGraph } from "../src/model";
+import { autoLayout, autoLayoutSubset, canConnect, editedSchematic, insertDenseAfter, parseGraph, type ModelGraph } from "../src/model";
 import { preferredSnapshotScope } from "../src/snapshotView";
 
 const diagram = (): ModelGraph => parseGraph(JSON.stringify({ version: 1, name: "Schematic", mode: "schematic", metadata: { weights: { id: "old" }, parameter_counts: { total: 4 } }, nodes: [
@@ -75,4 +75,13 @@ test("branch layout keeps hidden nodes and connections intact and avoids their c
   expect(result.nodes.find(n => n.id === "b")!.position).toEqual({ x: 250, y: 200 });
   expect(result.edges).toEqual(graph.edges);
   expect(graph.nodes[1].position).toEqual({ x: 1000, y: 0 });
+});
+
+test("full layout keeps an unbranched continuation aligned", () => {
+  const graph = diagram();
+  graph.edges.push({ id: "bc", source: "b", target: "c" });
+  const result = autoLayout(graph, null);
+  expect(result.nodes.map(n => n.position.y)).toEqual([40, 40, 40]);
+  expect(result.nodes.map(n => n.position.x)).toEqual([0, 250, 500]);
+  expect(result.edges).toEqual(graph.edges);
 });
