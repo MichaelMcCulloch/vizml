@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, GitBranch, Plus, Search, X } from "lucide-react";
 import { templateInfo, type ModelGraph } from "../model";
 import { deleteWorkspace, listWorkspace, openWorkspace, saveWorkspace, type WorkspaceItem } from "../workspace";
@@ -18,8 +18,9 @@ export default function TemplateMenu({
   const [newName, setNewName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [opening, setOpening] = useState(false);
+  const mounted = useRef(false);
   const refresh = () => listWorkspace("templates").then(items => { setSavedTemplates(items); setWorkspaceError(""); }).catch(error => setWorkspaceError(error.message));
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => { mounted.current = true; void refresh(); return () => { mounted.current = false; }; }, []);
   const savedMatches = savedTemplates.filter(item => item.name.toLowerCase().includes(query.toLowerCase()));
   const starters = {
     multimodal: {
@@ -108,10 +109,11 @@ export default function TemplateMenu({
             setOpening(true);
             try {
               const result = await openWorkspace("templates", item.id);
+              if (!mounted.current) return;
               if (!onLoadSaved({ ...result.graph, name: result.name }, original, version))
                 onNotice(`Template “${result.name}” was not opened because the workspace changed.`);
-            } catch (e) { onNotice((e as Error).message, true); }
-            finally { setOpening(false); }
+            } catch (e) { if (mounted.current) onNotice((e as Error).message, true); }
+            finally { if (mounted.current) setOpening(false); }
           }}><span className="example-icon"><GitBranch size={15}/></span><span><strong>{item.name}</strong><small>Saved template</small></span><ArrowUpRight size={12}/></button>
           <button className="icon-button" aria-label={`Delete template ${item.name}`} onClick={async () => {
             if (!window.confirm(`Delete saved template “${item.name}”?`)) return;

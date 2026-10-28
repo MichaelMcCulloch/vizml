@@ -221,3 +221,24 @@ test("a delayed template open does not replace a changed workspace", async () =>
     expect(attempts).toEqual([1]);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test("dismissing the template menu cancels a pending open", async () => {
+  const { default: TemplateMenu } = await import("../src/components/TemplateMenu");
+  const { waitFor, act } = await import("@testing-library/react");
+  const graph = parseGraph(JSON.stringify({ version: 1, name: "Original", nodes: [], edges: [] }));
+  const originalFetch = globalThis.fetch;
+  let finish!: (response: Response) => void;
+  globalThis.fetch = (async (url: any) => String(url).endsWith("/templates")
+    ? new Response(JSON.stringify({ items: [{ id: "t", name: "Saved", updated_at: "2026-01-01" }] }), { status: 200 })
+    : new Promise<Response>(resolve => { finish = resolve; })) as typeof fetch;
+  let opened = false;
+  try {
+    const view = render(<TemplateMenu graph={graph} onLoad={() => {}} getWorkspaceVersion={() => 1}
+      onNotice={() => {}} onLoadSaved={() => { opened = true; return true; }} />);
+    await waitFor(() => expect(screen.getByText("Saved template")).toBeTruthy());
+    fireEvent.click(screen.getByText("Saved template"));
+    view.unmount();
+    await act(async () => { finish(new Response(JSON.stringify({ id: "t", name: "Saved", graph }), { status: 200 })); });
+    expect(opened).toBe(false);
+  } finally { globalThis.fetch = originalFetch; }
+});
