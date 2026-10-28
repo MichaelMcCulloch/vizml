@@ -2896,6 +2896,12 @@ kbd {
 .snapshot-section h3 { font-size: 16px; font-weight: 500; color: rgb(var(--tone-9-rgb)); margin: 12px 0; line-height: 1.5; }
 .snapshot-section h4 { font-size: 10px; font-weight: 500; color: rgb(var(--tone-8-rgb)); margin: 0 0 12px; }
 .snapshot-section p { color: rgb(var(--tone-7-rgb)); font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.concat-input-key { margin-top: 16px; }
+.concat-input-key h4 { margin-bottom: 7px; color: rgb(var(--tone-7-rgb)); }
+.concat-input-key button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 6px 2px; border: 0; background: transparent; color: rgb(var(--tone-8-rgb)); text-align: left; font: 10px/1.4 var(--sans); cursor: pointer; }
+.concat-input-key button:hover { color: rgb(var(--accent-rgb)); }
+.concat-input-key button span { display: grid; place-items: center; flex: 0 0 19px; height: 19px; border: 1px solid rgb(var(--tone-4-rgb)); border-radius: 4px; font: 10px var(--mono); }
+.concat-input-key button svg { margin-left: auto; flex-shrink: 0; }
 .snapshot-metrics { display: flex; justify-content: space-between; gap: 8px; }
 .snapshot-metrics > span { font-size: 9px; color: rgb(var(--tone-7-rgb)); }
 .snapshot-metrics strong { display: block; color: rgb(var(--accent-rgb)); font: 11px var(--mono); margin-top: 8px; }

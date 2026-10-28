@@ -113,6 +113,13 @@ export default function SchematicInspector({ node, graph, analysis, onSelect, ov
         <span className="snapshot-kicker">{node ? catalog[node.data.kind].title : proposal ? "Untrained · separate actor & value encoders" : "Architecture snapshot"}</span>
         <h3>{node?.data.label ?? (proposal ? "Catan · ConvNeXt Small" : "The model, as described")}</h3>
         <p>{node ? String(data?.description ?? "No description supplied.") : proposal ? "32 → 48 → 64 channels. Five residual blocks per encoder. Full-resolution entity detail joins a coarse map with whole-board reach." : "Shapes, operations and connections come from the supplied JSON. You can inspect every claim here; this diagram does not execute the original forward pass."}</p>
+        {concatInputs.length > 0 && <div className="concat-input-key" aria-label="Concatenation inputs">
+          <h4>Inputs · top to bottom</h4>
+          {concatInputs.map((edge, index) => {
+            const source = graph.nodes.find(item => item.id === edge.source)!;
+            return <button key={edge.id} onClick={() => onSelect(source.id)}><span>{index + 1}</span>{source.data.label}<ArrowRight size={12} /></button>;
+          })}
+        </div>}
         {!node && proposal && <>
           <div className="proposal-budget">
             <div><span>Original → proposal</span><strong>{(proposal.baseline_parameters / 1e6).toFixed(2)}M → {(proposal.proposed_parameters / 1e6).toFixed(2)}M</strong><small>{proposal.parameter_reduction_percent.toFixed(1)}% fewer parameters</small></div>
