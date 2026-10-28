@@ -128,6 +128,7 @@ export default function App() {
     () => graph.nodes.find((n) => n.id === "conv2")?.id ?? null,
   );
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+  const [focusRequest, setFocusRequest] = useState<{ id: string; serial: number } | null>(null);
   const [toast, setToast] = useState<{
     message: string;
     error: boolean;
@@ -778,6 +779,7 @@ export default function App() {
                 analysis={analysis}
                 theme={effectiveTheme}
                 selected={selected}
+                focusRequest={focusRequest}
                 onSelect={select}
                 onLayoutChange={offsets => commit({ ...graphRef.current, metadata: { ...graphRef.current.metadata, architecture_layout: offsets } })}
                 expanded={expanded}
@@ -799,6 +801,7 @@ export default function App() {
                   <FindLayer graph={graph} onFind={id => {
                     const node = graphRef.current.nodes.find(item => item.id === id);
                     select(id);
+                    setFocusRequest(previous => ({ id, serial: (previous?.serial ?? 0) + 1 }));
                     if (node && !schematic) flow.setCenter(node.position.x + 95, node.position.y + 55, { zoom: 0.85, duration: 400 });
                   }} />
                   {schematic && <select className="snapshot-scope" aria-label="Focus model branch" value={scope} onChange={e => changeScope(e.target.value)}>

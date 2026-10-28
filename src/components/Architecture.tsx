@@ -47,6 +47,7 @@ type Props = {
   analysis: Analysis | null;
   theme: "light" | "dark";
   selected: string | null;
+  focusRequest?: { id: string; serial: number } | null;
   onSelect: (id: string) => void;
   onLayoutChange: (offsets: Record<string, Offset>) => void;
   expanded: boolean;
@@ -169,6 +170,7 @@ export default function Architecture({
   analysis,
   theme,
   selected,
+  focusRequest,
   onSelect,
   onLayoutChange,
   expanded,
@@ -177,6 +179,7 @@ export default function Architecture({
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const api = useRef<SceneAPI | null>(null);
+  const lastFocusRequest = useRef<number | null>(null);
   const [rotating, setRotating] = useState(false);
   const [labels, setLabels] = useState(true);
   const [flowing, setFlowing] = useState(
@@ -215,6 +218,7 @@ export default function Architecture({
     manualLayout: fullGraph.metadata?.architecture_layout,
     shapes: analysis?.nodes,
     selected,
+    focusRequest,
   });
 
   useEffect(() => {
@@ -1844,6 +1848,10 @@ export default function Architecture({
     const observer = new ResizeObserver(resize);
     observer.observe(element);
     resize();
+    if (focusRequest && focusRequest.id === selected && pointMap.has(focusRequest.id) && lastFocusRequest.current !== focusRequest.serial) {
+      lastFocusRequest.current = focusRequest.serial;
+      api.current?.focusSelected();
+    }
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     const setPointer = (event: { clientX: number; clientY: number }) => {
