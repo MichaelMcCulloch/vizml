@@ -907,6 +907,11 @@ export default function Architecture({
 
     const layoutPoint = (id: string) =>
       positions.get(id) ?? parkedAt.get(id) ?? pointFor(id);
+    const manual = readManualLayout(graph.name, fullGraph.metadata?.architecture_layout);
+    const manualOffset = (id: string) => {
+      const offset = manual[id] ?? [0, 0, 0];
+      return new THREE.Vector3(offset[0], offset[1], offset[2]);
+    };
     let minZ = Number.POSITIVE_INFINITY;
     let maxZ = Number.NEGATIVE_INFINITY;
     let minX = Number.POSITIVE_INFINITY;
@@ -914,7 +919,7 @@ export default function Architecture({
     let minY = Number.POSITIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
     for (const id of validNodes) {
-      const point = layoutPoint(id);
+      const point = layoutPoint(id).clone().add(manualOffset(id));
       minZ = Math.min(minZ, point.z);
       maxZ = Math.max(maxZ, point.z);
       minX = Math.min(minX, point.x);
@@ -937,13 +942,8 @@ export default function Architecture({
     const centerY = (frameMinY + frameMaxY) / 2;
     const centerZ = (frameMinZ + frameMaxZ) / 2;
 
-    const manual = readManualLayout(graph.name, fullGraph.metadata?.architecture_layout);
     const persistLayout = () => {
       saveLayout.current({ ...manual });
-    };
-    const manualOffset = (id: string) => {
-      const offset = manual[id] ?? [0, 0, 0];
-      return new THREE.Vector3(offset[0], offset[1], offset[2]);
     };
     const relatedNodes = new Set<string>();
     if (selected) for (const edge of graph.edges) {
