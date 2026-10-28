@@ -39,11 +39,20 @@ export default function ResizablePanels({
   landscapeValue.current = landscape;
 
   useEffect(() => {
-    const updateOrientation = () =>
-      setLandscape(window.innerWidth > window.innerHeight);
+    const element = container.current;
+    if (!element) return;
+    // The library and inspector can leave a narrow, tall workspace even on a
+    // landscape monitor. Stack the views there so the long architecture gets
+    // the full available width; place them side by side only when the actual
+    // editor has room for both.
+    const updateOrientation = () => {
+      const { width, height } = element.getBoundingClientRect();
+      if (width && height) setLandscape(width > height * 1.15);
+    };
+    const observer = new ResizeObserver(updateOrientation);
+    observer.observe(element);
     updateOrientation();
-    window.addEventListener("resize", updateOrientation);
-    return () => window.removeEventListener("resize", updateOrientation);
+    return () => observer.disconnect();
   }, []);
 
   const update = (value: number, persist = false) => {
