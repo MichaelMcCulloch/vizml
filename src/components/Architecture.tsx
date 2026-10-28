@@ -903,7 +903,7 @@ export default function Architecture({
       const edge = graph.edges.find(e => e.source === id && ["add", "residual"].includes(byId.get(e.target)?.data.kind ?? ""));
       return edge ? [{ id, target: edge.target }] : [];
     });
-    placeSideInputs(attachments, positions, halfWidthOf, SNAP_STEP);
+    placeSideInputs(attachments, positions, halfWidthOf, SNAP_STEP, footprint);
 
     const layoutPoint = (id: string) =>
       positions.get(id) ?? parkedAt.get(id) ?? pointFor(id);

@@ -82,3 +82,14 @@ test("bias side inputs sit immediately behind their dependent on distinct grid c
   expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(4);
   for (const point of [a, b]) for (const value of [point.x, point.y, point.z]) expect(Math.abs(value % 2)).toBe(0);
 });
+
+test("parked side inputs avoid wide glyphs in adjacent columns", () => {
+  const points = new Map([
+    ["add", {x: 8, y: 0, z: 0}], ["bias", {x: 0, y: 0, z: 0}],
+    ["wide", {x: 8, y: 0, z: -4}],
+  ]);
+  placeSideInputs([{id: "bias", target: "add"}], points, () => 1, 2,
+    id => id === "wide" ? {left: 2, right: 0.15} : {left: 0.15, right: 0.15});
+  expect(points.get("bias")!.x).toBe(6);
+  expect(Math.abs(points.get("bias")!.y)).toBeGreaterThanOrEqual(4);
+});

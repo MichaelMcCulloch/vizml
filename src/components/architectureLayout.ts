@@ -89,6 +89,7 @@ export function placeSideInputs(
   positions: Map<string, {x: number; y: number; z: number}>,
   radius: (id: string) => number,
   grid = 2,
+  footprint?: (id: string) => {left: number; right: number},
 ): void {
   const attachmentIds = new Set(attachments.map(item => item.id));
   const placed = new Set<string>();
@@ -101,7 +102,10 @@ export function placeSideInputs(
     let y = dependent.y;
     const occupied = (candidateY: number) => [...positions].some(([otherId, other]) => {
       if (otherId === id || (attachmentIds.has(otherId) && !placed.has(otherId))) return false;
-      if (Math.abs(x - other.x) > grid * 0.5) return false;
+      if (footprint) {
+        const a = footprint(id), b = footprint(otherId);
+        if (x + a.right + 0.35 <= other.x - b.left || other.x + b.right + 0.35 <= x - a.left) return false;
+      } else if (Math.abs(x - other.x) > grid * 0.5) return false;
       const separation = Math.max(3.5, radius(id) + radius(otherId) + 1.5);
       return Math.hypot(candidateY - other.y, z - other.z) < separation;
     });
