@@ -1544,7 +1544,14 @@ export default function Architecture({
           const [start, end] = segments[index] ?? [0, 1];
           to = bar(bFace, start, end);
         }
-        addRibbon(group, from, to, appearance(longConnection ? (theme === "light" ? 0.075 : 0.06) : (theme === "light" ? 0.24 : 0.17)), sourceGlyph === "concat", targetGlyph === "concat");
+        // Long background ribbons stay quiet, but selecting the join should
+        // make every incoming segment and the combined output easy to trace.
+        const focusedJoin = selected === edge.target && targetGlyph === "concat" ||
+          selected === edge.source && sourceGlyph === "concat";
+        const ribbonOpacity = focusedJoin ? (theme === "light" ? 0.46 : 0.34)
+          : longConnection ? (theme === "light" ? 0.075 : 0.06)
+            : (theme === "light" ? 0.24 : 0.17);
+        addRibbon(group, from, to, appearance(ribbonOpacity), sourceGlyph === "concat", targetGlyph === "concat");
         if (targetGlyph === "concat" && selected === edge.target) {
           const sourceExtent = connectionExtent(from);
           const targetTop = to[0], targetBottom = to[to.length - 1];
