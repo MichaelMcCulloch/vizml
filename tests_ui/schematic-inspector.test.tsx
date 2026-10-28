@@ -10,6 +10,22 @@ const { parseGraph } = await import("../src/model");
 afterEach(cleanup);
 afterAll(() => GlobalRegistrator.unregister());
 
+test("layer search finds named layers and selects the requested result", async () => {
+  const { default: FindLayer } = await import("../src/components/FindLayer");
+  const graph = parseGraph(JSON.stringify({ version: 1, name: "Graph", nodes: [
+    { id: "first", position: { x: 0, y: 0 }, data: { kind: "dense", label: "Hidden projection", params: {} } },
+    { id: "second", position: { x: 200, y: 0 }, data: { kind: "dense", label: "Output score", params: {} } },
+  ], edges: [] }));
+  const selected: string[] = [];
+  render(<FindLayer graph={graph} onFind={id => selected.push(id)} />);
+  fireEvent.click(screen.getByRole("button", { name: "Find a layer" }));
+  fireEvent.change(screen.getByLabelText("Search layers"), { target: { value: "score" } });
+  expect(screen.queryByText("Hidden projection")).toBeNull();
+  fireEvent.click(screen.getByText("Output score"));
+  expect(selected).toEqual(["second"]);
+  expect(screen.queryByLabelText("Search layers")).toBeNull();
+});
+
 function fixture() {
   const graph = parseGraph(JSON.stringify({ version: 1, name: "Schematic", mode: "schematic", nodes: [
     { id: "node", position: { x: 0, y: 0 }, data: { kind: "dense", label: "Projection", params: { units: 32, bias: true, layout: [1, 2] }, output_shape: ["B", "L", 32], parameter_count: 0, declaration_pending: true } },

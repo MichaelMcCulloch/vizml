@@ -98,7 +98,7 @@ function LayerNode({ id, data, selected }: NodeProps<LayerNodeType>) {
         <span className="layer-kind">{schematic && data.kind === "embedding" ? "Embedding table" : definition.title}</span>
         {issue && <CircleAlert size={13} className="error-icon" />}
       </div>
-      <div className="layer-node-name">{data.label}</div>
+      <div className="layer-node-name" title={data.label}>{data.label}</div>
       <div className="layer-detail">
         {schematic ? schematicDetail : isRecurrent(data.kind)
           ? `${p.hidden_size} hidden · ${p.layers} ${Number(p.layers) === 1 ? "layer" : "layers"}${Number(p.bidirectional) ? " · ↔" : ""} · ${Number(p.return_sequences ?? 1) ? "sequence" : "final state"}`

@@ -1041,6 +1041,16 @@ kbd {
   text-overflow: ellipsis;
   max-width: 175px;
 }
+.graph-panel .panel-header { position: relative; }
+.find-layer-menu { position: absolute; top: calc(100% + 4px); left: 8px; width: min(320px, calc(100% - 16px)); z-index: 30; background: rgb(var(--tone-2-rgb)); border: 1px solid rgb(var(--tone-4-rgb)); border-radius: 7px; box-shadow: 0 12px 32px #0003; padding: 7px; }
+.find-layer-search { display: flex; align-items: center; gap: 7px; padding: 3px 5px; color: rgb(var(--tone-7-rgb)); }
+.find-layer-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: rgb(var(--tone-9-rgb)); outline: none; font: 12px var(--sans); }
+.find-layer-results { max-height: 260px; overflow-y: auto; }
+.find-layer-results button { display: block; width: 100%; border: 0; border-radius: 4px; padding: 8px; background: transparent; color: rgb(var(--tone-9-rgb)); text-align: left; cursor: pointer; }
+.find-layer-results button:hover, .find-layer-results button:focus-visible { background: rgb(var(--tone-4-rgb)); }
+.find-layer-results strong, .find-layer-results small { display: block; overflow-wrap: anywhere; }
+.find-layer-results strong { font-size: 12px; }
+.find-layer-results small, .find-layer-results p { color: rgb(var(--tone-7-rgb)); font-size: 10px; margin: 4px 0 0; }
 .layer-detail {
   font: 8px var(--mono);
   color: rgb(var(--tone-7-rgb));

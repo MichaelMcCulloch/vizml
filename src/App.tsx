@@ -38,6 +38,7 @@ import Architecture from "./components/Architecture";
 import ResizablePanels from "./components/ResizablePanels";
 import StatusBar from "./components/StatusBar";
 import TemplateMenu from "./components/TemplateMenu";
+import FindLayer from "./components/FindLayer";
 import WorkspaceControls from "./components/WorkspaceControls";
 import CheckpointControls from "./components/CheckpointControls";
 import { preferredSnapshotScope, snapshotScopes } from "./snapshotView";
@@ -795,6 +796,11 @@ export default function App() {
                   </span>
                 </div>
                 <div className="panel-tools">
+                  <FindLayer graph={graph} onFind={id => {
+                    const node = graphRef.current.nodes.find(item => item.id === id);
+                    select(id);
+                    if (node && !schematic) flow.setCenter(node.position.x + 95, node.position.y + 55, { zoom: 0.85, duration: 400 });
+                  }} />
                   {schematic && <select className="snapshot-scope" aria-label="Focus model branch" value={scope} onChange={e => changeScope(e.target.value)}>
                     {scopes.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                   </select>}
