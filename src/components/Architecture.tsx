@@ -987,12 +987,20 @@ export default function Architecture({
           return mesh;
         };
         if (glyph === "concat") {
-          addMesh(new THREE.BoxGeometry(0.18, 4, 0.22));
           const incoming = graph.edges.filter(e => e.target === id && byId.has(e.source));
           const segments = concatSegments(incoming.length);
-          for (const [, end] of segments.slice(0, -1))
-            addMesh(new THREE.BoxGeometry(0.22, 0.025, 0.34), 0, 2 - end * 4, 0);
-          halfDepth.set(id, 0.09);
+          if (!segments.length) addMesh(new THREE.BoxGeometry(0.18, 4, 0.22));
+          segments.forEach(([start, end], index) => {
+            const source = byId.get(incoming[index].source)!;
+            const segmentColor = displayColor(catalog[source.data.kind].color, theme);
+            const segmentMaterial = new THREE.MeshStandardMaterial({ color: segmentColor, emissive: segmentColor, emissiveIntensity: 0.12, roughness: 0.4 });
+            const segment = new THREE.Mesh(new THREE.BoxGeometry(0.20, Math.max(0.01, 4 * (end - start) - 0.04), 0.28), segmentMaterial);
+            segment.position.y = 2 - 2 * (start + end);
+            segment.userData.nodeId = id;
+            meshes.push(segment);
+            group.add(segment);
+          });
+          halfDepth.set(id, 0.1);
         } else if (glyph === "add") {
           addMesh(new THREE.TorusGeometry(0.5, 0.065, 8, 32));
           addMesh(new THREE.BoxGeometry(0.08, 0.65, 0.1));
@@ -1532,6 +1540,13 @@ export default function Architecture({
           to = bar(bFace, start, end);
         }
         addRibbon(group, from, to, appearance(longConnection ? (theme === "light" ? 0.075 : 0.06) : (theme === "light" ? 0.24 : 0.17)), sourceGlyph === "concat", targetGlyph === "concat");
+        if (targetGlyph === "concat" && selected === edge.target) {
+          const sourceExtent = connectionExtent(from);
+          const targetTop = to[0], targetBottom = to[to.length - 1];
+          const outline = appearance(theme === "light" ? 0.34 : 0.28);
+          addSpline(group, sourceExtent.top, targetTop, outline, 0.18);
+          addSpline(group, sourceExtent.bottom, targetBottom, outline, 0.18);
+        }
         if (sourceGlyph === "concat" && targetGlyph === "dense" && bn && !inputNeurons.has(edge.target) &&
             (graph.mode !== "schematic" || analysis.nodes[target.id].parameters > 0)) {
           const samples = Array.from({ length: 13 }, (_, i) => aFace.clone().add(new THREE.Vector3(0, 2 - i * 4 / 12, 0)));
