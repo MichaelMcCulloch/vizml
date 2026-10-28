@@ -25,7 +25,7 @@ import {
 } from "../model";
 import { sequenceGeometry } from "./sequenceGeometry";
 import { architectureGlyph, concatInputs, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "./architectureSemantics";
-import { compactGridColumns, separateAlignedPaths } from "./architectureLayout";
+import { compactGridColumns, placeSideInputs, separateAlignedPaths } from "./architectureLayout";
 import { recurrentGeometry, recurrentMetrics, spatialScale, type SpatialFace } from "./recurrentGeometry";
 import {
   connectionExtent,
@@ -896,21 +896,12 @@ export default function Architecture({
       return layoutFamily(id);
     });
     separateAlignedPaths(validNodes, chains, positions, halfWidthOf, new Set(parkedAt.keys()), SNAP_STEP);
-    // Place each condition/bias beside its own dependent, with separate slots
-    // when an add has more than one such input.
-    const parkedCounts = new Map<string, number>();
-    for (const [id] of parkedAt) {
+    // Keep side inputs visible below and behind the operation they affect.
+    const attachments = [...parkedAt.keys()].flatMap(id => {
       const edge = graph.edges.find(e => e.source === id && ["add", "residual"].includes(byId.get(e.target)?.data.kind ?? ""));
-      const target = edge && positions.get(edge.target);
-      const point = positions.get(id);
-      if (target && point && edge) {
-        const slot = parkedCounts.get(edge.target) ?? 0;
-        parkedCounts.set(edge.target, slot + 1);
-        point.x = target.x - SNAP_STEP;
-        point.y = target.y;
-        point.z = target.z - (Math.ceil((halfWidthOf(edge.target) + 1.5) / SNAP_STEP) + slot) * SNAP_STEP;
-      }
-    }
+      return edge ? [{ id, target: edge.target }] : [];
+    });
+    placeSideInputs(attachments, positions, halfWidthOf, SNAP_STEP);
 
     const layoutPoint = (id: string) =>
       positions.get(id) ?? parkedAt.get(id) ?? pointFor(id);
@@ -1774,7 +1765,18 @@ export default function Architecture({
         camera.position.add(point.clone().sub(controls.target));
         controls.target.copy(point);
         const width = Math.max(14, halfWidthOf(selected) * 4 + 8);
-        camera.zoom = THREE.MathUtils.clamp((camera.right - camera.left) / width, 0.8, 6);
+        camera.updateMatrixWorld();
+        const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+        let halfHeight = 4;
+        for (const id of relatedNodes) {
+          const neighbor = worldPoint(id);
+          if (!neighbor || neighbor.distanceTo(point) > 10) continue;
+          halfHeight = Math.max(halfHeight, Math.abs(neighbor.sub(point).dot(up)) + 3);
+        }
+        camera.zoom = THREE.MathUtils.clamp(Math.min(
+          (camera.right - camera.left) / width,
+          (camera.top - camera.bottom) / (halfHeight * 2),
+        ), 0.8, 6);
         camera.updateProjectionMatrix();
         controls.update();
         renderer.render(scene, camera);

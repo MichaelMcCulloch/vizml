@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { compactGridColumns, separateAlignedPaths } from "../src/components/architectureLayout";
+import { compactGridColumns, placeSideInputs, separateAlignedPaths } from "../src/components/architectureLayout";
 
 test("separates overlapping branches without breaking their centerlines", () => {
   const positions = new Map([
@@ -49,4 +49,18 @@ test("packs independent branches without widening every depth for one large glyp
   expect(columns.get("y")! - columns.get("x")!).toBe(4);
   for (const edge of edges) expect(columns.get(edge.target)!).toBeGreaterThan(columns.get(edge.source)!);
   for (const x of columns.values()) expect(x % 2).toBe(0);
+});
+
+test("bias side inputs occupy distinct grid cells below their dependent", () => {
+  const points = new Map([
+    ["add", {x: 8, y: 0, z: 0}], ["bias-a", {x: 0, y: 0, z: 0}],
+    ["bias-b", {x: 0, y: 0, z: 0}], ["other", {x: 6, y: -4, z: -4}],
+  ]);
+  placeSideInputs([{id:"bias-a",target:"add"}, {id:"bias-b",target:"add"}], points, () => 1);
+  const a = points.get("bias-a")!, b = points.get("bias-b")!;
+  expect(a.x).toBe(6);
+  expect(a.z).toBe(-4);
+  expect(a.y).toBeLessThan(-4);
+  expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(4);
+  for (const point of [a, b]) for (const value of [point.x, point.y, point.z]) expect(Math.abs(value % 2)).toBe(0);
 });
