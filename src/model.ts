@@ -1469,7 +1469,9 @@ export function autoLayout(
       }
     }
   }
-  const level = new Map(graph.nodes.map(n => [n.id, analysis?.nodes[n.id]?.depth ?? depths.get(n.id) ?? 0]));
+  // Current connections are authoritative. Analysis can lag behind an edit or
+  // omit a node, so using its depth first can put a child beside its parent.
+  const level = new Map(graph.nodes.map(n => [n.id, depths.get(n.id) ?? analysis?.nodes[n.id]?.depth ?? 0]));
   const rows = new Map<string, number>();
   const parents = new Map(graph.nodes.map(n => [n.id, graph.edges.filter(e => e.target === n.id).map(e => e.source)]));
   const children = new Map(graph.nodes.map(n => [n.id, graph.edges.filter(e => e.source === n.id).map(e => e.target)]));

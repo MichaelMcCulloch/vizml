@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { autoLayout, autoLayoutSubset, canConnect, editedSchematic, insertDenseAfter, parseGraph, type ModelGraph } from "../src/model";
+import { autoLayout, autoLayoutSubset, canConnect, editedSchematic, insertDenseAfter, parseGraph, type Analysis, type ModelGraph } from "../src/model";
 import { preferredSnapshotScope } from "../src/snapshotView";
 
 const diagram = (): ModelGraph => parseGraph(JSON.stringify({ version: 1, name: "Schematic", mode: "schematic", metadata: { weights: { id: "old" }, parameter_counts: { total: 4 } }, nodes: [
@@ -84,4 +84,13 @@ test("full layout keeps an unbranched continuation aligned", () => {
   expect(result.nodes.map(n => n.position.y)).toEqual([40, 40, 40]);
   expect(result.nodes.map(n => n.position.x)).toEqual([0, 250, 500]);
   expect(result.edges).toEqual(graph.edges);
+});
+
+test("layout follows current connections even when analysis has stale depths", () => {
+  const graph = diagram();
+  graph.edges.push({ id: "bc", source: "b", target: "c" });
+  const info = (depth: number) => ({ depth, shape: [], input_shape: [], parameters: 0, elements: 0, merge: "", dependencies: 0 });
+  const stale: Analysis = { valid: true, nodes: { a: info(2), b: info(0), c: info(0) }, order: ["a", "b", "c"], parameters: 0, activation_bytes: 0, depth: 2, errors: [], warnings: [], outputs: [] };
+  const result = autoLayout(graph, stale);
+  expect(result.nodes.map(node => node.position.x)).toEqual([0, 250, 500]);
 });
