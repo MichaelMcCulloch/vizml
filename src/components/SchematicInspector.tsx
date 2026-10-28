@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FileSearch, X, ArrowRight, Search } from "lucide-react";
 import { catalog, formatNumber, shapeText, type Analysis, type LayerNode, type ModelGraph, type Params } from "../model";
 import { formatDeclaredShape, parseDeclaredShape } from "../schematicEditing";
@@ -37,6 +37,8 @@ export default function SchematicInspector({ node, graph, analysis, onSelect, ov
   onDelete: (id: string) => void; onDuplicate: (id: string) => void; onInsertDense?: (id: string) => void; onDisconnect: (id: string) => void;
 }) {
   const [search, setSearch] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; }, [node?.id, graph.name, graph.template]);
   const [shape, setShape] = useState("");
   const [settings, setSettings] = useState("");
   const [shapeError, setShapeError] = useState("");
@@ -105,7 +107,7 @@ export default function SchematicInspector({ node, graph, analysis, onSelect, ov
     <div className="inspector-eyebrow"><FileSearch size={13} /> {proposal ? "ARCHITECTURE PROPOSAL" : "SUPPLIED SCHEMATIC"}
       {(node || overview) && <button className="icon-button" aria-label="Close inspector" onClick={() => onSelect(null)}><X size={14} /></button>}
     </div>
-    <div className="inspector-scroll">
+    <div className="inspector-scroll" ref={scrollRef}>
       <div className="snapshot-section snapshot-provenance">
         <span className="snapshot-kicker">{node ? catalog[node.data.kind].title : proposal ? "Untrained · separate actor & value encoders" : "Architecture snapshot"}</span>
         <h3>{node?.data.label ?? (proposal ? "Catan · ConvNeXt Small" : "The model, as described")}</h3>

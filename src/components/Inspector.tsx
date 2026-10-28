@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import {
   Copy,
   Trash2,
@@ -183,6 +184,8 @@ export default function Inspector({
   onExpandStage,
   onSwapInputs,
 }: Props) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; }, [node?.id, graph.name, graph.template]);
   if (graph.mode === "schematic") return <SchematicInspector node={node} graph={graph} analysis={analysis} onSelect={onSelect} overview={showSnapshotOverview} onUpdate={onUpdateSchematic} onDelete={onDelete} onDuplicate={onDuplicate} onInsertDense={onInsertDense} onDisconnect={onDisconnect} />;
   if (!node)
     return (
@@ -240,7 +243,7 @@ export default function Inspector({
           <X size={14} />
         </button>
       </div>
-      <div className="inspector-scroll">
+      <div className="inspector-scroll" ref={scrollRef}>
         <div className="inspector-intro">
           <span
             className="inspector-layer-icon"
