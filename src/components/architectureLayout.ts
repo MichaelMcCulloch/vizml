@@ -1,4 +1,12 @@
 /** Place paths on a compact 3D grid, keeping unbranched paths straight. */
+export function clearVisibleOffsets<T>(offsets: Record<string, T>, visibleIds: Iterable<string>): boolean {
+  let changed = false;
+  for (const id of visibleIds) {
+    if (Object.hasOwn(offsets, id)) { delete offsets[id]; changed = true; }
+  }
+  return changed;
+}
+
 export function separateAlignedPaths(
   ids: string[], chains: string[][],
   positions: Map<string, { x: number; y: number; z: number }>,

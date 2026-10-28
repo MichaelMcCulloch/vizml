@@ -25,7 +25,7 @@ import {
 } from "../model";
 import { sequenceGeometry } from "./sequenceGeometry";
 import { architectureGlyph, concatInputs, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "./architectureSemantics";
-import { compactGridColumns, placeSideInputs, separateAlignedPaths } from "./architectureLayout";
+import { clearVisibleOffsets, compactGridColumns, placeSideInputs, separateAlignedPaths } from "./architectureLayout";
 import { recurrentGeometry, recurrentMetrics, spatialScale, type SpatialFace } from "./recurrentGeometry";
 import {
   connectionExtent,
@@ -1788,9 +1788,8 @@ export default function Architecture({
         renderer.render(scene, camera);
       },
       resetLayout: () => {
-        if (!Object.keys(manual).length) return;
+        if (!clearVisibleOffsets(manual, layerGroups.keys())) return;
         readout.hidden = true;
-        for (const id of Object.keys(manual)) delete manual[id];
         for (const [id, group] of layerGroups) {
           const base = pointMap.get(id);
           if (base) group.position.copy(base);
@@ -2165,8 +2164,8 @@ export default function Architecture({
           <button
             className="icon-button"
             onClick={() => api.current?.resetLayout()}
-            title="Reset manually moved layers"
-            aria-label="Reset manually moved layers"
+            title={graph.nodes.length < fullGraph.nodes.length ? "Reset positions in visible branch" : "Reset manually moved layers"}
+            aria-label={graph.nodes.length < fullGraph.nodes.length ? "Reset positions in visible branch" : "Reset manually moved layers"}
           >
             <Undo2 size={14} />
           </button>

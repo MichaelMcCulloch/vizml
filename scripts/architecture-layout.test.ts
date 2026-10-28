@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { compactGridColumns, placeSideInputs, separateAlignedPaths } from "../src/components/architectureLayout";
+import { clearVisibleOffsets, compactGridColumns, placeSideInputs, separateAlignedPaths } from "../src/components/architectureLayout";
+
+test("resetting a focused branch preserves hidden manual positions", () => {
+  const offsets: Record<string, number[]> = { visible: [2, 0, 0], hidden: [0, 0, 4] };
+  expect(clearVisibleOffsets(offsets, ["visible", "unmoved"])).toBe(true);
+  expect(offsets).toEqual({ hidden: [0, 0, 4] });
+  expect(clearVisibleOffsets(offsets, ["visible"])).toBe(false);
+});
 
 test("separates overlapping branches without breaking their centerlines", () => {
   const positions = new Map([
