@@ -24,7 +24,7 @@ import {
   type ModelGraph,
 } from "../model";
 import { sequenceGeometry } from "./sequenceGeometry";
-import { architectureGlyph, concatInputs, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "./architectureSemantics";
+import { architectureGlyph, concatInputs, concatSegments, denseContinuesThroughActivation, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "./architectureSemantics";
 import { clearVisibleOffsets, compactGridColumns, placeSideInputs, separateAlignedPaths } from "./architectureLayout";
 import { recurrentGeometry, recurrentMetrics, spatialScale, type SpatialFace } from "./recurrentGeometry";
 import {
@@ -299,6 +299,7 @@ export default function Architecture({
       (id) => analysis.nodes[id] && byId.has(id),
     );
     const denseRuns = denseRunBoundaries(validNodes, graph.edges, id => architectureGlyph(byId.get(id)!.data.kind) === "dense");
+    const reverseEdges = graph.edges.map(edge => ({ source: edge.target, target: edge.source }));
     const needsInputColumn = (id: string) => {
       if (!denseRuns.starts.has(id)) return false;
       const incoming = graph.edges.filter(edge => edge.target === id && byId.has(edge.source));
@@ -963,7 +964,9 @@ export default function Architecture({
       layerGroups.set(id, group);
       const glyph = architectureGlyph(node.data.kind);
       const terminal = !hasOutgoing.has(id);
-      const nodeColor = isInput(node.data.kind) || (glyph === "dense" && denseRuns.ends.has(id)) || (terminal && isOutput(node.data.kind))
+      const denseOutput = glyph === "dense" && denseRuns.ends.has(id) &&
+        !denseContinuesThroughActivation(id, graph.edges, key => byId.has(key) ? architectureGlyph(byId.get(key)!.data.kind) : undefined);
+      const nodeColor = isInput(node.data.kind) || denseOutput || (terminal && isOutput(node.data.kind))
         ? "#e3b74f" : glyph === "dense" ? "#ad78df" : catalog[node.data.kind].color;
       const color = displayColor(nodeColor, theme);
       const focused = selected === id;
@@ -1265,7 +1268,9 @@ export default function Architecture({
           const inputCount = Math.max(1, Math.min(13, width));
           const inputPositions = Array.from({ length: inputCount }, (_, i) =>
             new THREE.Vector3(-1.7, inputCount === 1 ? 0 : (i / (inputCount - 1) - 0.5) * height, 0));
-          const inputColor = displayColor("#e3b74f", theme);
+          const hiddenInput = denseContinuesThroughActivation(id, reverseEdges,
+            key => byId.has(key) ? architectureGlyph(byId.get(key)!.data.kind) : undefined);
+          const inputColor = displayColor(hiddenInput ? "#ad78df" : "#e3b74f", theme);
           const inputDots = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 12, 10),
             new THREE.MeshStandardMaterial({ color: inputColor, emissive: inputColor, emissiveIntensity: 0.65, transparent: true, opacity }), inputCount);
           const marker = new THREE.Object3D();

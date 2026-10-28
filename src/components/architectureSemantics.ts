@@ -67,6 +67,25 @@ export function denseRunBoundaries(
   return { starts, ends };
 }
 
+/** A pointwise activation between dense layers does not make the first an output. */
+export function denseContinuesThroughActivation(
+  id: string, edges: { source: string; target: string }[],
+  kind: (id: string) => ArchitectureGlyph | undefined,
+): boolean {
+  let current = id;
+  const visited = new Set([id]);
+  for (;;) {
+    const next = edges.filter(edge => edge.source === current);
+    if (next.length !== 1) return false;
+    current = next[0].target;
+    if (visited.has(current) || edges.filter(edge => edge.target === current).length !== 1) return false;
+    visited.add(current);
+    const glyph = kind(current);
+    if (glyph === "dense") return true;
+    if (glyph !== "activation") return false;
+  }
+}
+
 /** Align unbranched paths, without forcing joins or forks into a chain. */
 export function straightChains(
   ids: string[], edges: { source: string; target: string }[],

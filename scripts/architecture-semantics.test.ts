@@ -1,5 +1,15 @@
 import { expect, test } from "bun:test";
-import { architectureGlyph, concatInputs, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "../src/components/architectureSemantics";
+import { architectureGlyph, concatInputs, concatSegments, denseContinuesThroughActivation, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "../src/components/architectureSemantics";
+
+test("a dense layer followed by activation and another dense layer is hidden", () => {
+  const glyphs = { a: "dense", act: "activation", b: "dense", out: "other" } as const;
+  const edges = [{ source: "a", target: "act" }, { source: "act", target: "b" }, { source: "b", target: "out" }];
+  const kind = (id: string) => glyphs[id as keyof typeof glyphs];
+  expect(denseContinuesThroughActivation("a", edges, kind)).toBe(true);
+  expect(denseContinuesThroughActivation("b", edges, kind)).toBe(false);
+  expect(denseContinuesThroughActivation("b", edges.map(edge => ({ source: edge.target, target: edge.source })), kind)).toBe(true);
+  expect(denseContinuesThroughActivation("a", [...edges, { source: "act", target: "out" }], kind)).toBe(false);
+});
 import { makeNode } from "../src/model";
 
 test("operation glyphs stay distinct regardless of tensor rank", () => {
