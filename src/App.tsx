@@ -47,6 +47,7 @@ import LayerNode, { AnalysisContext } from "./components/LayerNode";
 import SkipEdge from "./components/SkipEdge";
 import {
   autoLayout,
+  autoLayoutSubset,
   canConnect,
   projectResidualSkips,
   expandConvNeXtStage,
@@ -832,9 +833,12 @@ export default function App() {
                   <button
                     className="quiet-button layout-button"
                     onClick={() => {
-                      commit(autoLayout(graph, analysis));
+                      commit(schematic && scope !== "all"
+                        ? autoLayoutSubset(graph, new Set(viewGraph.nodes.map(node => node.id)))
+                        : autoLayout(graph, analysis));
                       setTimeout(fit, 30);
                     }}
+                    title={schematic && scope !== "all" ? "Arrange visible branch; hidden blocks stay in place" : "Arrange the entire graph"}
                   >
                     <LayoutGrid size={13} />
                     Auto layout

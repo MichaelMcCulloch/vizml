@@ -1480,3 +1480,28 @@ export function autoLayout(
     }),
   };
 }
+
+/** Lay out the visible subgraph without changing hidden nodes or connections. */
+export function autoLayoutSubset(graph: ModelGraph, ids: Set<string>): ModelGraph {
+  const nodes = graph.nodes.filter(node => ids.has(node.id));
+  if (!nodes.length) return graph;
+  const edges = graph.edges.filter(edge => ids.has(edge.source) && ids.has(edge.target));
+  const laidOut = autoLayout({ ...graph, nodes, edges }, null);
+  const originX = Math.min(...nodes.map(node => node.position.x));
+  const originY = Math.min(...nodes.map(node => node.position.y));
+  const hidden = graph.nodes.filter(node => !ids.has(node.id));
+  const collides = (offset: number) => laidOut.nodes.some(node => hidden.some(other =>
+    Math.abs(originX + node.position.x - other.position.x) < 195 &&
+    Math.abs(originY + node.position.y - 40 + offset - other.position.y) < 120));
+  let offset = 0;
+  for (let row = 1; collides(offset); row++) {
+    if (!collides(row * 200)) { offset = row * 200; break; }
+    if (!collides(-row * 200)) { offset = -row * 200; break; }
+  }
+  const positions = new Map(laidOut.nodes.map(node => [node.id, {
+    x: originX + node.position.x,
+    y: originY + node.position.y - 40 + offset,
+  }]));
+  return { ...graph, nodes: graph.nodes.map(node => positions.has(node.id)
+    ? { ...node, position: positions.get(node.id)! } : node) };
+}

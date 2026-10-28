@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { canConnect, editedSchematic, insertDenseAfter, parseGraph, type ModelGraph } from "../src/model";
+import { autoLayoutSubset, canConnect, editedSchematic, insertDenseAfter, parseGraph, type ModelGraph } from "../src/model";
 import { preferredSnapshotScope } from "../src/snapshotView";
 
 const diagram = (): ModelGraph => parseGraph(JSON.stringify({ version: 1, name: "Schematic", mode: "schematic", metadata: { weights: { id: "old" }, parameter_counts: { total: 4 } }, nodes: [
@@ -63,4 +63,16 @@ test("insertion finds a free row when an unrelated branch occupies the new colum
   const result = insertDenseAfter(graph, "a")!;
   expect(result.graph.nodes.find(n => n.id === result.id)!.position).toEqual({ x: 230, y: 140 });
   expect(result.graph.nodes.find(n => n.id === "c")!.position).toEqual({ x: 230, y: 0 });
+});
+
+test("branch layout keeps hidden nodes and connections intact and avoids their cards", () => {
+  const graph = diagram();
+  graph.nodes[1].position = { x: 1000, y: 0 };
+  graph.nodes[2].position = { x: 250, y: 0 };
+  const result = autoLayoutSubset(graph, new Set(["a", "b"]));
+  expect(result.nodes.find(n => n.id === "c")!.position).toEqual({ x: 250, y: 0 });
+  expect(result.nodes.find(n => n.id === "a")!.position).toEqual({ x: 0, y: 200 });
+  expect(result.nodes.find(n => n.id === "b")!.position).toEqual({ x: 250, y: 200 });
+  expect(result.edges).toEqual(graph.edges);
+  expect(graph.nodes[1].position).toEqual({ x: 1000, y: 0 });
 });
