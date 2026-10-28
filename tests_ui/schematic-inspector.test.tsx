@@ -26,6 +26,26 @@ test("layer search finds named layers and selects the requested result", async (
   expect(screen.queryByLabelText("Search layers")).toBeNull();
 });
 
+test("layer search supports arrow keys, selection, and escape without clearing the editor", async () => {
+  const { default: FindLayer } = await import("../src/components/FindLayer");
+  const graph = parseGraph(JSON.stringify({ version: 1, name: "Graph", nodes: [
+    { id: "first", position: { x: 0, y: 0 }, data: { kind: "dense", label: "First", params: {} } },
+    { id: "second", position: { x: 200, y: 0 }, data: { kind: "dense", label: "Second", params: {} } },
+  ], edges: [] }));
+  const selected: string[] = [];
+  render(<FindLayer graph={graph} onFind={id => selected.push(id)} />);
+  const trigger = screen.getByRole("button", { name: "Find a layer" });
+  fireEvent.click(trigger);
+  const input = screen.getByLabelText("Search layers");
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(selected).toEqual(["second"]);
+  fireEvent.click(trigger);
+  fireEvent.keyDown(screen.getByLabelText("Search layers"), { key: "Escape" });
+  expect(screen.queryByLabelText("Search layers")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});
+
 function fixture() {
   const graph = parseGraph(JSON.stringify({ version: 1, name: "Schematic", mode: "schematic", nodes: [
     { id: "node", position: { x: 0, y: 0 }, data: { kind: "dense", label: "Projection", params: { units: 32, bias: true, layout: [1, 2] }, output_shape: ["B", "L", 32], parameter_count: 0, declaration_pending: true } },
