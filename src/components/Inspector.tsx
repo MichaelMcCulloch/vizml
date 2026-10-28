@@ -23,6 +23,7 @@ import {
 import SequenceInspector from "./SequenceInspector";
 import RecurrentInspector from "./RecurrentInspector";
 import SchematicInspector from "./SchematicInspector";
+import { hasLearnedBias } from "./architectureSemantics";
 
 type Props = {
   showSnapshotOverview?: boolean;
@@ -334,7 +335,7 @@ export default function Inspector({
           </div>
         )}
         {kind === "dense" && <div className="inspector-section">
-          <label className="resize-corners"><input type="checkbox" checked={Number(params.bias ?? 1) !== 0} onChange={e => change("bias", e.target.checked ? 1 : 0)} /> Learned bias</label>
+          <label className="resize-corners"><input type="checkbox" checked={hasLearnedBias(node)} onChange={e => change("bias", e.target.checked ? 1 : 0)} /> Learned bias</label>
           <div className="dense-insert"><button className="quiet-button" onClick={() => onInsertDense(node.id)}>Insert dense layer after</button>
           <small>Existing outgoing connections pass through the new layer.</small></div>
         </div>}

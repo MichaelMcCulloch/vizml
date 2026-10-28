@@ -34,6 +34,12 @@ test("bias is enabled for older layers and can be disabled", () => {
   expect(hasLearnedBias(n, true)).toBe(false);
   n.data.params.bias = 0;
   expect(hasLearnedBias(n)).toBe(false);
+  n.data.params.bias = "false";
+  expect(hasLearnedBias(n, true)).toBe(false);
+  n.data.params.bias = "true";
+  expect(hasLearnedBias(n, true)).toBe(true);
+  n.data.params.bias = "unknown";
+  expect(hasLearnedBias(n, true)).toBe(false);
 });
 test("only unbranched paths of the same family form straight chains", () => {
   const edges = [{source:"a",target:"b"},{source:"b",target:"c"},{source:"c",target:"d"},{source:"c",target:"e"},{source:"e",target:"f"}];

@@ -20,7 +20,12 @@ export function hasLearnedBias(node: LayerNode, schematic = false): boolean {
   // An explicit declaration wins, including an explicit false. Older builder
   // graphs omitted bias because Linear defaulted to true.
   const declared = node.data.params.bias;
-  if (declared !== undefined) return Number(declared) !== 0;
+  if (declared !== undefined) {
+    if (typeof declared === "boolean") return declared;
+    if (typeof declared === "number") return declared === 1;
+    if (typeof declared === "string") return ["1", "true"].includes(declared.trim().toLowerCase());
+    return false;
+  }
   if (!schematic) return true;
   // A schematic may instead declare its owned tensors. Only infer a bias for
   // an explicitly named module, not an arbitrary bias in a composite block.
