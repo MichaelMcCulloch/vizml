@@ -48,6 +48,7 @@ type Props = {
   theme: "light" | "dark";
   selected: string | null;
   onSelect: (id: string) => void;
+  onLayoutChange: (offsets: Record<string, Offset>) => void;
   expanded: boolean;
   onExpand: () => void;
   branchScope?: { value: string; options: { id: string; label: string }[]; onChange: (id: string) => void };
@@ -75,11 +76,10 @@ function readFlowSpeed() {
   }
 }
 
-function readManualLayout(name: string): Record<string, Offset> {
+function readManualLayout(name: string, saved: unknown): Record<string, Offset> {
   try {
-    const raw = localStorage.getItem(LAYOUT_KEY_PREFIX + name);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
+    const raw = saved === undefined ? localStorage.getItem(LAYOUT_KEY_PREFIX + name) : null;
+    const parsed: unknown = saved === undefined ? (raw ? JSON.parse(raw) : {}) : saved;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     const offsets: Record<string, Offset> = {};
     for (const [id, value] of Object.entries(parsed)) {
@@ -93,14 +93,6 @@ function readManualLayout(name: string): Record<string, Offset> {
     return offsets;
   } catch {
     return {};
-  }
-}
-
-function storeManualLayout(name: string, offsets: Record<string, Offset>) {
-  try {
-    localStorage.setItem(LAYOUT_KEY_PREFIX + name, JSON.stringify(offsets));
-  } catch {
-    // Layout is a convenience; a full or disabled storage must not break the view.
   }
 }
 
@@ -178,6 +170,7 @@ export default function Architecture({
   theme,
   selected,
   onSelect,
+  onLayoutChange,
   expanded,
   onExpand,
   branchScope,
@@ -193,6 +186,8 @@ export default function Architecture({
   const [failed, setFailed] = useState(false);
   const select = useRef(onSelect);
   select.current = onSelect;
+  const saveLayout = useRef(onLayoutChange);
+  saveLayout.current = onLayoutChange;
   const rotateValue = useRef(rotating);
   rotateValue.current = rotating;
   const labelsValue = useRef(labels);
@@ -217,6 +212,7 @@ export default function Architecture({
     edges: graph.edges.map((e) => ({ source: e.source, target: e.target })),
     allNodes: fullGraph.nodes.map(n => ({ id: n.id, kind: n.data.kind })),
     allEdges: fullGraph.edges.map(e => ({ id: e.id, source: e.source, target: e.target })),
+    manualLayout: fullGraph.metadata?.architecture_layout,
     shapes: analysis?.nodes,
     selected,
   });
@@ -935,7 +931,10 @@ export default function Architecture({
     const centerY = (frameMinY + frameMaxY) / 2;
     const centerZ = (frameMinZ + frameMaxZ) / 2;
 
-    const manual = readManualLayout(graph.name);
+    const manual = readManualLayout(graph.name, fullGraph.metadata?.architecture_layout);
+    const persistLayout = () => {
+      saveLayout.current({ ...manual });
+    };
     const manualOffset = (id: string) => {
       const offset = manual[id] ?? [0, 0, 0];
       return new THREE.Vector3(offset[0], offset[1], offset[2]);
@@ -1797,7 +1796,7 @@ export default function Architecture({
         }
         drawEdges();
         setLabelVisibility(labelsValue.current);
-        storeManualLayout(graph.name, manual);
+        persistLayout();
         renderer.render(scene, camera);
       },
       setRotate: (value) => {
@@ -1993,7 +1992,7 @@ export default function Architecture({
       } catch {
         // The pointer may already have been released by the browser.
       }
-      if (moved) storeManualLayout(graph.name, manual);
+      if (moved) persistLayout();
       if (!cancelled) select.current(id);
       return true;
     };
@@ -2024,7 +2023,7 @@ export default function Architecture({
       layerGroups.get(id)?.position.copy(base);
       rebuildEdgesFor(id);
       setLabelVisibility(labelsValue.current);
-      storeManualLayout(graph.name, manual);
+      persistLayout();
       renderer.render(scene, camera);
       event.stopImmediatePropagation();
       event.preventDefault();

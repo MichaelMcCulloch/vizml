@@ -778,6 +778,7 @@ export default function App() {
                 theme={effectiveTheme}
                 selected={selected}
                 onSelect={select}
+                onLayoutChange={offsets => commit({ ...graphRef.current, metadata: { ...graphRef.current.metadata, architecture_layout: offsets } })}
                 expanded={expanded}
                 onExpand={() => setExpanded(!expanded)}
                 branchScope={schematic ? { value: scope, options: scopes, onChange: changeScope } : undefined}

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { autoLayout, autoLayoutSubset, canConnect, editedSchematic, insertDenseAfter, parseGraph, type Analysis, type ModelGraph } from "../src/model";
+import { autoLayout, autoLayoutSubset, canConnect, cleanGraph, editedSchematic, insertDenseAfter, parseGraph, type Analysis, type ModelGraph } from "../src/model";
 import { preferredSnapshotScope } from "../src/snapshotView";
 
 const diagram = (): ModelGraph => parseGraph(JSON.stringify({ version: 1, name: "Schematic", mode: "schematic", metadata: { weights: { id: "old" }, parameter_counts: { total: 4 } }, nodes: [
@@ -93,4 +93,11 @@ test("layout follows current connections even when analysis has stale depths", (
   const stale: Analysis = { valid: true, nodes: { a: info(2), b: info(0), c: info(0) }, order: ["a", "b", "c"], parameters: 0, activation_bytes: 0, depth: 2, errors: [], warnings: [], outputs: [] };
   const result = autoLayout(graph, stale);
   expect(result.nodes.map(node => node.position.x)).toEqual([0, 250, 500]);
+});
+
+test("3D layer positions survive a portable graph round trip", () => {
+  const graph = diagram();
+  graph.metadata = { ...graph.metadata, architecture_layout: { c: [2, 0, -4] } };
+  const reopened = parseGraph(JSON.stringify(cleanGraph(graph)));
+  expect(reopened.metadata?.architecture_layout).toEqual({ c: [2, 0, -4] });
 });
