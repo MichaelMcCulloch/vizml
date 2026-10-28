@@ -117,6 +117,7 @@ def test_generated_checkpoints_load_strictly_and_remain_attached_after_layout_ed
     paired = Graph.model_validate(cp.bind_checkpoint(info["id"], graph)["graph"])
     paired.nodes[0].position.x += 123
     paired.name = "Renamed"
+    paired.metadata["architecture_layout"] = {paired.nodes[0].id: [2, 0, -4]}
     export = cp.export_checkpoint(paired, "state_dict")
     for name, value in torch.load(cp.cache_path(export["id"]), weights_only=True).items():
         torch.testing.assert_close(value, state[name], rtol=0, atol=0)

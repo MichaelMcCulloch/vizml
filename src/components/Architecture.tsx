@@ -1788,6 +1788,7 @@ export default function Architecture({
         renderer.render(scene, camera);
       },
       resetLayout: () => {
+        if (!Object.keys(manual).length) return;
         readout.hidden = true;
         for (const id of Object.keys(manual)) delete manual[id];
         for (const [id, group] of layerGroups) {
@@ -2018,7 +2019,7 @@ export default function Architecture({
     const doubleClick = (event: MouseEvent) => {
       const id = pickNode(event);
       const base = id ? pointMap.get(id) : undefined;
-      if (!id || !base) return;
+      if (!id || !base || !Object.hasOwn(manual, id)) return;
       delete manual[id];
       layerGroups.get(id)?.position.copy(base);
       rebuildEdgesFor(id);
