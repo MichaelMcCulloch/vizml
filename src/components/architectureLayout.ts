@@ -80,20 +80,18 @@ export function placeSideInputs(
 ): void {
   const attachmentIds = new Set(attachments.map(item => item.id));
   const placed = new Set<string>();
-  const slots = new Map<string, number>();
   for (const {id, target} of attachments) {
     const point = positions.get(id), dependent = positions.get(target);
     if (!point || !dependent) continue;
-    const slot = slots.get(target) ?? 0;
-    slots.set(target, slot + 1);
     const x = dependent.x - grid;
-    const z = dependent.z - Math.ceil((radius(target) + 1.5) / grid) * grid;
-    let y = dependent.y - (3 + slot) * grid;
+    const clearance = Math.max(3.5, radius(id) + radius(target) + 1.5);
+    const z = dependent.z - Math.ceil(clearance / grid) * grid;
+    let y = dependent.y;
     const occupied = (candidateY: number) => [...positions].some(([otherId, other]) => {
       if (otherId === id || (attachmentIds.has(otherId) && !placed.has(otherId))) return false;
       if (Math.abs(x - other.x) > grid * 0.5) return false;
-      const clearance = Math.max(3.5, radius(id) + radius(otherId) + 1.5);
-      return Math.hypot(candidateY - other.y, z - other.z) < clearance;
+      const separation = Math.max(3.5, radius(id) + radius(otherId) + 1.5);
+      return Math.hypot(candidateY - other.y, z - other.z) < separation;
     });
     while (occupied(y)) y -= grid;
     point.x = x; point.y = y; point.z = z;
