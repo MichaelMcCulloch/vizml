@@ -118,6 +118,7 @@ export default function App() {
   );
   const effectiveTheme: "light" | "dark" =
     themeMode === "system" ? (systemDark ? "dark" : "light") : themeMode;
+  const workspaceVersion = useRef(0);
   const graphRef = useRef(graph);
   graphRef.current = graph;
   const [selected, setSelected] = useState<string | null>(
@@ -436,6 +437,7 @@ export default function App() {
   const undo = useCallback(() => {
     const previous = history.current.past.pop();
     if (!previous) return;
+    workspaceVersion.current++;
     history.current.future.push({ graph: cleanGraph(graphRef.current), projectId: projectIdRef.current });
     const measured = withNodeMeasurements(previous.graph, graphRef.current);
     graphRef.current = measured;
@@ -447,6 +449,7 @@ export default function App() {
   const redo = useCallback(() => {
     const next = history.current.future.pop();
     if (!next) return;
+    workspaceVersion.current++;
     history.current.past.push({ graph: cleanGraph(graphRef.current), projectId: projectIdRef.current });
     const measured = withNodeMeasurements(next.graph, graphRef.current);
     graphRef.current = measured;
@@ -539,6 +542,7 @@ export default function App() {
     [commit],
   );
   const loadExample = (key: string) => {
+    workspaceVersion.current++;
     const next = examples[key]();
     commit(next);
     changeProjectId(null);
@@ -702,10 +706,14 @@ export default function App() {
           </div>
           <span className="topbar-divider" />
           <WorkspaceControls graph={graph} projectId={projectId} onProjectId={changeProjectId} onNotice={notice}
-            onSaved={(id, savedGraph) => { changeProjectId(id); markProjectSaved(savedGraph); }}
-            onRename={name => commit({ ...graphRef.current, name })}
-            onNew={() => { commit(examples.blank()); changeProjectId(null); select(null); setScope("all"); setExpanded(false); }}
-            onOpen={(opened, id) => { commit(opened); changeProjectId(id); markProjectSaved(opened); select(null); setScope(preferredSnapshotScope(opened)); setExpanded(false); setTimeout(fit, 100); }} />
+            getWorkspaceVersion={() => workspaceVersion.current}
+            onSaved={(id, savedGraph, previousName, version) => {
+              if (version !== workspaceVersion.current) return false;
+              if (savedGraph.name !== previousName && graphRef.current.name === previousName) commit({ ...graphRef.current, name: savedGraph.name });
+              changeProjectId(id); markProjectSaved(savedGraph); return true;
+            }}
+            onNew={() => { workspaceVersion.current++; commit(examples.blank()); changeProjectId(null); select(null); setScope("all"); setExpanded(false); }}
+            onOpen={(opened, id, version, originalGraph) => { if (version !== workspaceVersion.current || graphRef.current !== originalGraph) return false; workspaceVersion.current++; commit(opened); changeProjectId(id); markProjectSaved(opened); select(null); setScope(preferredSnapshotScope(opened)); setExpanded(false); setTimeout(fit, 100); return true; }} />
           <div className="example-picker" ref={menu}>
             <button
               className={`quiet-button example-trigger ${exampleMenu ? "active" : ""}`}
@@ -715,12 +723,12 @@ export default function App() {
               Templates
               <ChevronDown size={12} />
             </button>
-            {exampleMenu && <TemplateMenu graph={graph} onLoad={loadExample} onNotice={notice} onLoadSaved={opened => { commit(opened); changeProjectId(null); select(null); setScope(preferredSnapshotScope(opened)); setExampleMenu(false); setExpanded(false); setTimeout(fit, 100); notice("Template loaded. Save as a project to keep your changes."); }} />}
+            {exampleMenu && <TemplateMenu graph={graph} onLoad={loadExample} onNotice={notice} onLoadSaved={opened => { workspaceVersion.current++; commit(opened); changeProjectId(null); select(null); setScope(preferredSnapshotScope(opened)); setExampleMenu(false); setExpanded(false); setTimeout(fit, 100); notice("Template loaded. Save as a project to keep your changes."); }} />}
           </div>
           <span className="topbar-divider" />
           <CheckpointControls graph={graph} valid={!!analysis?.valid && !engine.checking} canBuild={canBuild && !engine.busy}
             onSave={saveFile} onPython={() => engine.request("export")} onNotice={notice}
-            onImport={imported => { commit(imported); changeProjectId(null); select(null); setExpanded(false); setScope(preferredSnapshotScope(imported)); setTimeout(fit, 100); }} />
+            onImport={imported => { workspaceVersion.current++; commit(imported); changeProjectId(null); select(null); setExpanded(false); setScope(preferredSnapshotScope(imported)); setTimeout(fit, 100); }} />
         </div>
       </header>
 

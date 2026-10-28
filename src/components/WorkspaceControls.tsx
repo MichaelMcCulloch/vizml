@@ -3,10 +3,10 @@ import { ChevronDown, FolderOpen, Save, X } from "lucide-react";
 import type { ModelGraph } from "../model";
 import { deleteWorkspace, listWorkspace, openWorkspace, saveWorkspace, type WorkspaceItem } from "../workspace";
 
-export default function WorkspaceControls({ graph, projectId, onProjectId, onSaved, onOpen, onNew, onRename, onNotice }: {
+export default function WorkspaceControls({ graph, projectId, onProjectId, onSaved, onOpen, onNew, getWorkspaceVersion, onNotice }: {
   graph: ModelGraph; projectId: string | null; onProjectId: (id: string | null) => void;
-  onSaved: (id: string, graph: ModelGraph) => void;
-  onOpen: (graph: ModelGraph, id: string) => void; onNew: () => void; onRename: (name: string) => void;
+  onSaved: (id: string, graph: ModelGraph, previousName: string, workspaceVersion: number) => boolean;
+  onOpen: (graph: ModelGraph, id: string, workspaceVersion: number, originalGraph: ModelGraph) => boolean; onNew: () => void; getWorkspaceVersion: () => number;
   onNotice: (message: string, error?: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -19,18 +19,20 @@ export default function WorkspaceControls({ graph, projectId, onProjectId, onSav
   useEffect(() => { if (open) void refresh(); }, [open]);
   const saveProject = async (copy = false, name = graph.name) => {
     if (!name.trim()) return;
+    const workspaceVersion = getWorkspaceVersion();
     setBusy(true);
     try {
       const namedGraph = { ...graph, name: name.trim() };
       const result = await saveWorkspace("projects", name.trim(), namedGraph, copy ? undefined : projectId ?? undefined);
-      if (name.trim() !== graph.name) onRename(name.trim());
-      onSaved(result.id, namedGraph); await refresh(); setProjectName(null); setOpen(false); onNotice(`Project “${result.name}” saved to the workspace.`);
+      const attached = onSaved(result.id, namedGraph, graph.name, workspaceVersion);
+      await refresh(); setProjectName(null); setOpen(false); onNotice(attached ? `Project “${result.name}” saved to the workspace.` : `Project “${result.name}” saved. Your current workspace was left unchanged.`);
     } catch (e) { onNotice((e as Error).message, true); }
     finally { setBusy(false); }
   };
   const openProject = async (item: WorkspaceItem) => {
+    const workspaceVersion = getWorkspaceVersion();
     setBusy(true);
-    try { const result = await openWorkspace("projects", item.id); onOpen(result.graph, result.id); setOpen(false); onNotice(`Opened project “${result.name}”.`); }
+    try { const result = await openWorkspace("projects", item.id); const opened = onOpen(result.graph, result.id, workspaceVersion, graph); setOpen(false); onNotice(opened ? `Opened project “${result.name}”.` : `Project “${result.name}” was not opened because the workspace changed.`); }
     catch (e) { onNotice((e as Error).message, true); }
     finally { setBusy(false); }
   };

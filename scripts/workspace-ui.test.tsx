@@ -31,7 +31,7 @@ test("schematic inspector exposes editable declaration and deletion", () => {
 });
 test("project control is available from the top bar", () => {
   const markup = renderToStaticMarkup(<WorkspaceControls graph={graph} projectId={null} onProjectId={noop}
-    onSaved={noop} onOpen={noop} onNew={noop} onRename={noop} onNotice={noop} />);
+    onSaved={() => true} onOpen={() => true} onNew={noop} getWorkspaceVersion={() => 0} onNotice={noop} />);
   expect(markup).toContain('aria-label="Projects"');
 });
 

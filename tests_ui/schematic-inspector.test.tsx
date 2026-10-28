@@ -155,3 +155,37 @@ test("unavailable saved projects report an unknown state", async () => {
   await waitFor(() => expect(hook.result.current.status).toBe("unavailable"));
   expect(hook.result.current.baseline).toBeNull();
 });
+
+test("a delayed save reports the workspace it started in", async () => {
+  const { default: WorkspaceControls } = await import("../src/components/WorkspaceControls");
+  const { waitFor } = await import("@testing-library/react");
+  const graph = parseGraph(JSON.stringify({ version: 1, name: "Original", nodes: [], edges: [] }));
+  const next = { ...graph, name: "Other workspace" };
+  const originalFetch = globalThis.fetch;
+  let finish!: (response: Response) => void;
+  globalThis.fetch = (async (_url: any, init?: RequestInit) => {
+    if (init?.method === "POST") return new Promise<Response>(resolve => { finish = resolve; });
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  }) as typeof fetch;
+  let version = 1;
+  const notices: string[] = [];
+  const saves: Array<{version: number; name: string; previous: string}> = [];
+  const noop = () => {};
+  const props = { projectId: null, onProjectId: noop, onNew: noop, getWorkspaceVersion: () => version,
+    onNotice: (message: string) => notices.push(message), onOpen: () => true,
+    onSaved: (_id: string, saved: typeof graph, previous: string, started: number) => {
+      saves.push({version: started, name: saved.name, previous}); return started === version;
+    } };
+  try {
+    const view = render(<WorkspaceControls {...props} graph={graph} />);
+    fireEvent.click(screen.getByRole("button", {name: "Projects"}));
+    fireEvent.click(screen.getByText("Save project"));
+    fireEvent.change(screen.getByLabelText("Project name"), {target: {value: "Saved copy"}});
+    fireEvent.click(screen.getByRole("button", {name: "Save project"}));
+    version = 2;
+    view.rerender(<WorkspaceControls {...props} graph={next} />);
+    finish(new Response(JSON.stringify({id:"saved-id",name:"Saved copy",graph}), {status:200}));
+    await waitFor(() => expect(notices.some(message => message.includes("current workspace was left unchanged"))).toBe(true));
+    expect(saves).toEqual([{version:1, name:"Saved copy", previous:"Original"}]);
+  } finally { globalThis.fetch = originalFetch; }
+});
