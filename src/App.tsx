@@ -756,7 +756,7 @@ export default function App() {
               Templates
               <ChevronDown size={12} />
             </button>
-            {exampleMenu && <TemplateMenu graph={graph} onLoad={loadExample} onNotice={notice} onLoadSaved={opened => { workspaceVersion.current++; commit(opened); changeProjectId(null); select(null); setScope(preferredSnapshotScope(opened)); setExampleMenu(false); setExpanded(false); setTimeout(fit, 100); notice("Template loaded. Save as a project to keep your changes."); }} />}
+            {exampleMenu && <TemplateMenu graph={graph} onLoad={loadExample} onNotice={notice} getWorkspaceVersion={() => workspaceVersion.current} onLoadSaved={(opened, original, version) => { if (version !== workspaceVersion.current || graphRef.current !== original) return false; workspaceVersion.current++; commit(opened); changeProjectId(null); select(null); setScope(preferredSnapshotScope(opened)); setExampleMenu(false); setExpanded(false); setTimeout(fit, 100); notice("Template loaded. Save as a project to keep your changes."); return true; }} />}
           </div>
           <span className="topbar-divider" />
           <CheckpointControls graph={graph} valid={!!analysis?.valid && !engine.checking} canBuild={canBuild && !engine.busy}

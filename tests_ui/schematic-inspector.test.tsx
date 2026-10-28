@@ -192,3 +192,32 @@ test("a delayed save reports the workspace it started in", async () => {
     expect(saves).toEqual([{version:1, name:"Saved copy", previous:"Original"}]);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test("a delayed template open does not replace a changed workspace", async () => {
+  const { default: TemplateMenu } = await import("../src/components/TemplateMenu");
+  const { waitFor } = await import("@testing-library/react");
+  const graph = parseGraph(JSON.stringify({ version: 1, name: "Original", nodes: [], edges: [] }));
+  const originalFetch = globalThis.fetch;
+  let finish!: (response: Response) => void;
+  globalThis.fetch = (async (url: any) => String(url).endsWith("/templates")
+    ? new Response(JSON.stringify({ items: [{ id: "t", name: "Saved", updated_at: "2026-01-01" }] }), { status: 200 })
+    : new Promise<Response>(resolve => { finish = resolve; })) as typeof fetch;
+  let version = 1;
+  const notices: string[] = [];
+  const attempts: number[] = [];
+  const props = { onLoad: () => {}, getWorkspaceVersion: () => version,
+    onNotice: (message: string) => notices.push(message),
+    onLoadSaved: (_opened: typeof graph, original: typeof graph, started: number) => {
+      attempts.push(started); return started === version && original.name === "Other";
+    } };
+  try {
+    const view = render(<TemplateMenu {...props} graph={graph} />);
+    await waitFor(() => expect(screen.getByText("Saved template")).toBeTruthy());
+    fireEvent.click(screen.getByText("Saved template"));
+    version = 2;
+    view.rerender(<TemplateMenu {...props} graph={{ ...graph, name: "Other" }} />);
+    finish(new Response(JSON.stringify({ id: "t", name: "Saved", graph }), { status: 200 }));
+    await waitFor(() => expect(notices.some(message => message.includes("workspace changed"))).toBe(true));
+    expect(attempts).toEqual([1]);
+  } finally { globalThis.fetch = originalFetch; }
+});

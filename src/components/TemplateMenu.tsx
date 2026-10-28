@@ -4,11 +4,12 @@ import { templateInfo, type ModelGraph } from "../model";
 import { deleteWorkspace, listWorkspace, openWorkspace, saveWorkspace, type WorkspaceItem } from "../workspace";
 
 export default function TemplateMenu({
-  onLoad, onLoadSaved, onNotice, graph,
+  onLoad, onLoadSaved, onNotice, graph, getWorkspaceVersion,
 }: {
   graph: ModelGraph;
   onLoad: (key: string) => void;
-  onLoadSaved: (graph: ModelGraph) => void;
+  onLoadSaved: (graph: ModelGraph, original: ModelGraph, version: number) => boolean;
+  getWorkspaceVersion: () => number;
   onNotice: (message: string, error?: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -16,6 +17,7 @@ export default function TemplateMenu({
   const [workspaceError, setWorkspaceError] = useState("");
   const [newName, setNewName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [opening, setOpening] = useState(false);
   const refresh = () => listWorkspace("templates").then(items => { setSavedTemplates(items); setWorkspaceError(""); }).catch(error => setWorkspaceError(error.message));
   useEffect(() => { void refresh(); }, []);
   const savedMatches = savedTemplates.filter(item => item.name.toLowerCase().includes(query.toLowerCase()));
@@ -101,7 +103,16 @@ export default function TemplateMenu({
         <div className="menu-eyebrow">Saved templates</div>
         {workspaceError && <p className="workspace-empty">Saved templates unavailable: {workspaceError}</p>}
         {savedMatches.map(item => <div className="saved-template-item" key={item.id}>
-          <button onClick={async () => { try { const result = await openWorkspace("templates", item.id); onLoadSaved({ ...result.graph, name: result.name }); } catch (e) { onNotice((e as Error).message, true); } }}><span className="example-icon"><GitBranch size={15}/></span><span><strong>{item.name}</strong><small>Saved template</small></span><ArrowUpRight size={12}/></button>
+          <button disabled={opening} onClick={async () => {
+            const version = getWorkspaceVersion(), original = graph;
+            setOpening(true);
+            try {
+              const result = await openWorkspace("templates", item.id);
+              if (!onLoadSaved({ ...result.graph, name: result.name }, original, version))
+                onNotice(`Template “${result.name}” was not opened because the workspace changed.`);
+            } catch (e) { onNotice((e as Error).message, true); }
+            finally { setOpening(false); }
+          }}><span className="example-icon"><GitBranch size={15}/></span><span><strong>{item.name}</strong><small>Saved template</small></span><ArrowUpRight size={12}/></button>
           <button className="icon-button" aria-label={`Delete template ${item.name}`} onClick={async () => {
             if (!window.confirm(`Delete saved template “${item.name}”?`)) return;
             try { await deleteWorkspace("templates", item.id); await refresh(); onNotice("Template deleted."); } catch (e) { onNotice((e as Error).message, true); }
