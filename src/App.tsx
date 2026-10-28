@@ -190,6 +190,7 @@ export default function App() {
     if (schematic && !scopes.some(s => s.id === scope)) setScope("all");
   }, [scope, schematic, scopes]);
   const graphPane = useRef<HTMLDivElement>(null);
+  const scopeFocusVersion = useRef(0);
   const menu = useRef<HTMLDivElement>(null);
   const notice = useCallback((message: string, error = false) => {
     setToast({ message, error });
@@ -251,6 +252,27 @@ export default function App() {
     setSelected(id);
     setSelectedEdge(null);
   }, [flow, viewGraph.nodes]);
+
+  const changeScope = useCallback((value: string) => {
+    const version = ++scopeFocusVersion.current;
+    setScope(value);
+    select(null);
+    const ids = new Set(scopes.find(item => item.id === value)?.ids ?? []);
+    const first = graph.nodes.filter(node => ids.has(node.id))
+      .sort((a, b) => a.position.x - b.position.x)[0];
+    setTimeout(async () => {
+      if (scopeFocusVersion.current !== version) return;
+      await flow.fitView({ padding: 0.2, maxZoom: 0.9 });
+      // A long branch can technically fit while every label is illegible.
+      // Start at a readable scale and let the user pan through it; Fit graph
+      // remains available whenever the complete overview is wanted.
+      if (scopeFocusVersion.current === version && value !== "all" && first && flow.getZoom() < 0.55) {
+        const zoom = 0.7;
+        const width = graphPane.current?.clientWidth ?? 600;
+        flow.setCenter(first.position.x + width * 0.32 / zoom, first.position.y + 55, { zoom, duration: 350 });
+      }
+    }, 80);
+  }, [flow, graph.nodes, scopes, select]);
 
   useEffect(() => {
     setSaved(false);
@@ -757,7 +779,7 @@ export default function App() {
                 onSelect={select}
                 expanded={expanded}
                 onExpand={() => setExpanded(!expanded)}
-                branchScope={schematic ? { value: scope, options: scopes, onChange: value => { setScope(value); select(null); setTimeout(fit, 80); } } : undefined}
+                branchScope={schematic ? { value: scope, options: scopes, onChange: changeScope } : undefined}
               />
             }
           >
@@ -771,7 +793,7 @@ export default function App() {
                   </span>
                 </div>
                 <div className="panel-tools">
-                  {schematic && <select className="snapshot-scope" aria-label="Focus model branch" value={scope} onChange={e => { setScope(e.target.value); select(null); setTimeout(fit, 80); }}>
+                  {schematic && <select className="snapshot-scope" aria-label="Focus model branch" value={scope} onChange={e => changeScope(e.target.value)}>
                     {scopes.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                   </select>}
                   {schematic && <button className="icon-button" aria-label="Inspect supplied schematic" title="Source descriptions and snapshot claims" onClick={() => { select(null); setShowSnapshotInfo(!showSnapshotInfo); }}><FileSearch size={14} /></button>}
@@ -878,7 +900,8 @@ export default function App() {
                     defaultViewport={{ x: 0, y: 0, zoom: 0.7 }}
                     onInit={(instance) => {
                       if (graphRef.current.mode === "schematic") {
-                        setTimeout(() => instance.fitView({ padding: 0.2, maxZoom: 0.9 }), 100);
+                        if (scope !== "all") setTimeout(() => changeScope(scope), 100);
+                        else setTimeout(() => instance.fitView({ padding: 0.2, maxZoom: 0.9 }), 100);
                         return;
                       }
                       const target =
