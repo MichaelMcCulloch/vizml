@@ -1304,6 +1304,7 @@ export default function Architecture({
         graph.mode === "schematic" ? 0.6 : 0.68,
       );
       details.position.set(0, -3.0, 0);
+      details.userData.baseScale = details.scale.clone();
       group.add(details);
       nodeLabels.push({ id, sprite: details });
       if (isInput(node.data.kind) && (graph.mode !== "schematic" || !info.dependencies)) {
@@ -1751,10 +1752,16 @@ export default function Architecture({
       const ordered = [...nodeLabels].sort((a, b) => Number(b.id === selected) - Number(a.id === selected));
       for (const { id, sprite } of ordered) {
         if (selected && id !== selected && !relatedNodes.has(id)) { sprite.visible = false; continue; }
+        // A label's text occupies only part of its transparent sprite. Keep it
+        // readable at overview scale, then let screen-space collision handling
+        // choose which labels fit instead of displaying tiny text everywhere.
+        const pixelScale = width * camera.zoom / (camera.right - camera.left);
+        const baseScale = sprite.userData.baseScale as THREE.Vector3;
+        const scale = Math.max(1, 40 / (baseScale.y * pixelScale));
+        sprite.scale.copy(baseScale).multiplyScalar(scale);
         const point = new THREE.Vector3();
         sprite.getWorldPosition(point).project(camera);
         const x = (point.x + 1) * width / 2, y = (1 - point.y) * height / 2;
-        const pixelScale = width * camera.zoom / (camera.right - camera.left);
         const w = sprite.scale.x * pixelScale * sprite.userData.textWidthFraction + 8;
         const h = sprite.scale.y * pixelScale * 0.72 + 4;
         const box = { left: x - w / 2, right: x + w / 2, top: y - h / 2, bottom: y + h / 2 };
