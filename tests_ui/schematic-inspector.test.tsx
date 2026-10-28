@@ -217,6 +217,28 @@ test("expanded architecture exposes branch navigation and reports changes", asyn
   expect(screen.queryByRole("button", {name: "Focus selected layer"})).toBeNull();
 });
 
+test("camera projection is selectable in split view and remembered across mounts", async () => {
+  const { default: Architecture } = await import("../src/components/Architecture");
+  const { graph } = analysisFixture();
+  const before = JSON.stringify(graph);
+  const key = "vizml:architecture:projection";
+  localStorage.removeItem(key);
+  const noop = () => {};
+  const props = { graph, analysis: null, theme: "light" as const, selected: null, expanded: false,
+    onSelect: noop, onExpand: noop, onLayoutChange: noop };
+  const view = render(<Architecture {...props} />);
+  expect((screen.getByLabelText("Camera projection") as HTMLSelectElement).value).toBe("orthographic");
+  fireEvent.change(screen.getByLabelText("Camera projection"), { target: { value: "perspective" } });
+  expect(localStorage.getItem(key)).toBe("perspective");
+  view.unmount();
+  render(<Architecture {...props} expanded={true} />);
+  expect((screen.getByLabelText("Camera projection") as HTMLSelectElement).value).toBe("perspective");
+  fireEvent.change(screen.getByLabelText("Camera projection"), { target: { value: "orthographic" } });
+  expect(localStorage.getItem(key)).toBe("orthographic");
+  expect(JSON.stringify(graph)).toBe(before);
+  localStorage.removeItem(key);
+});
+
 test("project save state recovers after reload and ignores stale requests", async () => {
   const { renderHook, act, waitFor } = await import("@testing-library/react");
   const { useProjectBaseline } = await import("../src/useProjectBaseline");

@@ -27,6 +27,7 @@ import {
 import { sequenceGeometry } from "./sequenceGeometry";
 import { architectureGlyph, concatInputs, concatSegments, denseContinuesThroughActivation, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "./architectureSemantics";
 import { clearVisibleOffsets, compactGridColumns, placeSideInputs, separateAlignedPaths } from "./architectureLayout";
+import { cameraViewHeight, setCameraViewHeight, pixelsPerWorldUnit, perspectiveFitDistance, type ArchitectureCamera, type Projection } from "./architectureCamera";
 import { recurrentGeometry, recurrentMetrics, spatialScale, type SpatialFace } from "./recurrentGeometry";
 import {
   connectionExtent,
@@ -68,7 +69,16 @@ type Offset = [number, number, number];
 
 const LAYOUT_KEY_PREFIX = "vizml:architecture:manual:";
 const FLOW_SPEED_KEY = "vizml:architecture:flow-speed";
+const PROJECTION_KEY = "vizml:architecture:projection";
 const SNAP_STEP = 2;
+
+function readProjection(): Projection {
+  try {
+    return localStorage.getItem(PROJECTION_KEY) === "perspective" ? "perspective" : "orthographic";
+  } catch {
+    return "orthographic";
+  }
+}
 
 function readFlowSpeed() {
   try {
@@ -189,6 +199,7 @@ export default function Architecture({
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
   const [flowSpeed, setFlowSpeed] = useState(readFlowSpeed);
+  const [projection, setProjection] = useState<Projection>(readProjection);
   const [failed, setFailed] = useState(false);
   const select = useRef(onSelect);
   select.current = onSelect;
@@ -207,13 +218,14 @@ export default function Architecture({
   const cameraView = useRef<{
     position: number[];
     target: number[];
-    zoom: number;
+    height: number;
     signature: string;
   } | null>(null);
   // Graph positions deliberately do not influence the generated architecture.
   const signature = JSON.stringify({
     name: graph.name,
     theme,
+    projection,
     nodes: graph.nodes.map((n) => ({ id: n.id, data: n.data })),
     edges: graph.edges.map((e) => ({ source: e.source, target: e.target })),
     allNodes: fullGraph.nodes.map(n => ({ id: n.id, kind: n.data.kind })),
@@ -241,6 +253,14 @@ export default function Architecture({
   }, [flowSpeed]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(PROJECTION_KEY, projection);
+    } catch {
+      // Camera controls remain usable when preference storage is unavailable.
+    }
+  }, [projection]);
+
+  useEffect(() => {
     const element = host.current;
     if (!element || !analysis || !graph.nodes.length) return;
     let renderer: THREE.WebGLRenderer;
@@ -260,7 +280,7 @@ export default function Architecture({
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.setAttribute(
       "aria-label",
-      "Interactive 3D model architecture. Drag to orbit, scroll to zoom, click a layer to inspect.",
+      `Interactive 3D model architecture, ${projection} projection. Drag to orbit, scroll to zoom, click a layer to inspect.`,
     );
     renderer.domElement.setAttribute("role", "img");
     element.appendChild(renderer.domElement);
@@ -275,7 +295,9 @@ export default function Architecture({
     hoverCard.append(hoverTitle, hoverDetail, hoverCost);
     element.appendChild(hoverCard);
     const scene = new THREE.Scene();
-    const camera = new THREE.OrthographicCamera(-15, 15, 7, -7, 0.1, 300);
+    const camera: ArchitectureCamera = projection === "perspective"
+      ? new THREE.PerspectiveCamera(45, 1, 0.1, 300)
+      : new THREE.OrthographicCamera(-15, 15, 7, -7, 0.1, 300);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.075;
@@ -947,7 +969,9 @@ export default function Architecture({
     const frameSizeY = frameMaxY - frameMinY;
     const frameSizeZ = frameMaxZ - frameMinZ;
     const sceneExtent = Math.max(frameSizeX, frameSizeY, frameSizeZ, 12);
-    camera.far = Math.max(300, sceneExtent * 4);
+    camera.far = Math.max(300, sceneExtent * 30);
+    controls.minDistance = 0.5;
+    controls.maxDistance = sceneExtent * 20;
     const centerX = (frameMinX + frameMaxX) / 2;
     const centerY = (frameMinY + frameMaxY) / 2;
     const centerZ = (frameMinZ + frameMaxZ) / 2;
@@ -1767,11 +1791,10 @@ export default function Architecture({
     };
     reset();
     const shapeSignature = validNodes.join(",");
-    if (cameraView.current?.signature === shapeSignature) {
-      camera.position.fromArray(cameraView.current.position);
-      controls.target.fromArray(cameraView.current.target);
-      camera.zoom = cameraView.current.zoom;
-      camera.updateProjectionMatrix();
+    const savedView = cameraView.current?.signature === shapeSignature ? cameraView.current : null;
+    if (savedView) {
+      camera.position.fromArray(savedView.position);
+      controls.target.fromArray(savedView.target);
       controls.update();
     }
     let labelsDirty = true;
@@ -1797,12 +1820,11 @@ export default function Architecture({
       labelCamera.copy(camera.matrixWorld); labelProjection.copy(camera.projectionMatrix);
       scene.updateMatrixWorld();
       const occupied: { left: number; right: number; top: number; bottom: number }[] = [];
-      const pixelScale = width * camera.zoom / (camera.right - camera.left);
       const cameraRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
       const cameraUp = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
       const glyphRects = new Map<string, { left: number; right: number; top: number; bottom: number }>();
       for (const id of validNodes) {
-        const corners = glyphCorners(id).map(point => point.project(camera));
+        const corners = glyphCorners(id).map(point => point.project(camera)).filter(point => point.z >= -1 && point.z <= 1);
         if (!corners.length) continue;
         const xs = corners.map(point => (point.x + 1) * width / 2), ys = corners.map(point => (1 - point.y) * height / 2);
         const box = { left: Math.min(...xs) - 3, right: Math.max(...xs) + 3, top: Math.min(...ys) - 3, bottom: Math.max(...ys) + 3 };
@@ -1813,7 +1835,11 @@ export default function Architecture({
       // screen space before laying out neighboring node labels.
       for (const marker of inputMarkers) {
         const point = new THREE.Vector3();
-        marker.getWorldPosition(point).project(camera);
+        marker.getWorldPosition(point);
+        const pixelScale = pixelsPerWorldUnit(camera, point, height);
+        marker.visible = pixelScale > 0;
+        if (!marker.visible) continue;
+        point.project(camera);
         const x = (point.x + 1) * width / 2, y = (1 - point.y) * height / 2;
         const halfWidth = Math.max(5, marker.scale.y * pixelScale * 0.25);
         const halfHeight = Math.max(5, marker.scale.y * pixelScale * 0.3);
@@ -1826,12 +1852,15 @@ export default function Architecture({
         // readable at overview scale, then let screen-space collision handling
         // choose which labels fit instead of displaying tiny text everywhere.
         const baseScale = sprite.userData.baseScale as THREE.Vector3;
-        const scale = Math.max(1, 52 / (baseScale.y * pixelScale));
-        sprite.scale.copy(baseScale).multiplyScalar(scale);
         sprite.position.set(0, -3, 0);
         sprite.updateMatrixWorld();
         const point = new THREE.Vector3();
-        sprite.getWorldPosition(point).project(camera);
+        sprite.getWorldPosition(point);
+        const pixelScale = pixelsPerWorldUnit(camera, point, height);
+        if (!pixelScale) { sprite.visible = false; continue; }
+        const scale = Math.max(1, 52 / (baseScale.y * pixelScale));
+        sprite.scale.copy(baseScale).multiplyScalar(scale);
+        point.project(camera);
         const x = (point.x + 1) * width / 2, y = (1 - point.y) * height / 2;
         const w = sprite.scale.x * pixelScale * sprite.userData.textWidthFraction + 8;
         const h = sprite.scale.y * pixelScale * 0.72 + 4;
@@ -1850,7 +1879,7 @@ export default function Architecture({
         }
         // A selected layer always keeps its label; other labels yield to the
         // geometry and to higher-priority labels. Hover reveals omitted names.
-        if (!placed && id === selected) {
+        if (!placed && id === selected && point.z >= -1 && point.z <= 1) {
           const centerY = Math.max(h / 2 + 4, Math.min(height - h / 2 - 28, candidates[0]));
           sprite.position.addScaledVector(cameraRight, (centerX - x) / pixelScale).addScaledVector(cameraUp, (y - centerY) / pixelScale);
           occupied.push({ left: centerX - w / 2, right: centerX + w / 2, top: centerY - h / 2, bottom: centerY + h / 2 });
@@ -1883,10 +1912,20 @@ export default function Architecture({
           if (!neighbor || neighbor.distanceTo(point) > 10) continue;
           halfHeight = Math.max(halfHeight, Math.abs(neighbor.sub(point).dot(up)) + 3);
         }
-        camera.zoom = THREE.MathUtils.clamp(Math.min(
-          (camera.right - camera.left) / width,
-          (camera.top - camera.bottom) / (halfHeight * 2),
-        ), 0.8, 6);
+        if (camera instanceof THREE.PerspectiveCamera) {
+          setCameraViewHeight(camera, controls.target, Math.max(width / camera.aspect, halfHeight * 2));
+          // Large spatial glyphs can extend in front of the focus plane.
+          const distance = perspectiveFitDistance(camera, controls.target, glyphCorners(selected), { x: 0.85, y: 0.8 });
+          if (camera.position.distanceTo(controls.target) < distance) {
+            const back = camera.position.clone().sub(controls.target).normalize();
+            camera.position.copy(controls.target).addScaledVector(back, distance);
+          }
+        } else {
+          camera.zoom = THREE.MathUtils.clamp(Math.min(
+            (camera.right - camera.left) / width,
+            (camera.top - camera.bottom) / (halfHeight * 2),
+          ), 0.8, 6);
+        }
         camera.updateProjectionMatrix();
         controls.update();
         renderer.render(scene, camera);
@@ -1911,6 +1950,11 @@ export default function Architecture({
         renderer.render(scene, camera);
       },
     };
+    let viewportWidth = 0, viewportHeight = 0;
+    const fitFrame = (width: number, height: number) => ({
+      x: Math.max(0.1, (width - 48) / width),
+      y: (height - Math.min(70, height * 0.25)) / height,
+    });
     const resize = (recenter = false) => {
       const { width, height } = element.getBoundingClientRect();
       if (width <= 0 || height <= 0) return;
@@ -1930,12 +1974,11 @@ export default function Architecture({
       // Labels are excluded because their screen-sized sprites grow on zoom.
       scene.updateMatrixWorld(true);
       let left = Infinity, rightmost = -Infinity, bottom = Infinity, top = -Infinity;
-      for (const id of validNodes) {
-        for (const corner of glyphCorners(id)) {
-          const horizontal = corner.dot(right), vertical = corner.dot(up);
-          left = Math.min(left, horizontal); rightmost = Math.max(rightmost, horizontal);
-          bottom = Math.min(bottom, vertical); top = Math.max(top, vertical);
-        }
+      const corners = validNodes.flatMap(glyphCorners);
+      for (const corner of corners) {
+        const horizontal = corner.dot(right), vertical = corner.dot(up);
+        left = Math.min(left, horizontal); rightmost = Math.max(rightmost, horizontal);
+        bottom = Math.min(bottom, vertical); top = Math.max(top, vertical);
       }
       const projectedWidth = Number.isFinite(left) ? rightmost - left + 2 : 10;
       const projectedHeight = Number.isFinite(bottom) ? top - bottom + 2 : 8;
@@ -1946,22 +1989,44 @@ export default function Architecture({
         controls.target.add(shift);
         controls.update();
       }
-      const span = Math.max(
-        projectedWidth * width / Math.max(40, width - 48) / 2,
-        projectedHeight * width / Math.max(40, height - Math.min(70, height * 0.25)) / 2,
-        5.2 * aspect,
-      );
-      camera.left = -span;
-      camera.right = span;
-      camera.top = span / aspect;
-      camera.bottom = -span / aspect;
+      if (camera instanceof THREE.PerspectiveCamera) {
+        // Preserve the user's zoom relative to the fitted model as the split
+        // changes aspect, rather than shrinking it into a short, wide pane.
+        const previousFit = viewportWidth && viewportHeight
+          ? perspectiveFitDistance(camera, controls.target, corners, fitFrame(viewportWidth, viewportHeight)) : null;
+        camera.aspect = aspect;
+        camera.updateProjectionMatrix();
+        if (recenter || (previousFit && (width !== viewportWidth || height !== viewportHeight))) {
+          const nextFit = perspectiveFitDistance(camera, controls.target, corners, fitFrame(width, height));
+          const distance = recenter ? nextFit : camera.position.distanceTo(controls.target) * nextFit / previousFit!;
+          const back = camera.position.clone().sub(controls.target).normalize();
+          camera.position.copy(controls.target).addScaledVector(back, distance);
+          controls.update();
+        }
+      } else {
+        const span = Math.max(
+          projectedWidth * width / Math.max(40, width - 48) / 2,
+          projectedHeight * width / Math.max(40, height - Math.min(70, height * 0.25)) / 2,
+          5.2 * aspect,
+        );
+        camera.left = -span;
+        camera.right = span;
+        camera.top = span / aspect;
+        camera.bottom = -span / aspect;
+      }
+      viewportWidth = width;
+      viewportHeight = height;
       camera.updateProjectionMatrix();
       renderer.render(scene, camera);
     };
     refit = () => resize(true);
     const observer = new ResizeObserver(() => resize());
     observer.observe(element);
-    resize(cameraView.current?.signature !== shapeSignature);
+    resize(!savedView);
+    if (savedView) {
+      setCameraViewHeight(camera, controls.target, savedView.height);
+      controls.update();
+    }
     if (focusRequest && focusRequest.id === selected && pointMap.has(focusRequest.id) && lastFocusRequest.current !== focusRequest.serial) {
       lastFocusRequest.current = focusRequest.serial;
       api.current?.focusSelected();
@@ -2200,7 +2265,7 @@ export default function Architecture({
       cameraView.current = {
         position: camera.position.toArray(),
         target: controls.target.toArray(),
-        zoom: camera.zoom,
+        height: cameraViewHeight(camera, controls.target),
         signature: shapeSignature,
       };
       cancelAnimationFrame(frame);
@@ -2252,6 +2317,11 @@ export default function Architecture({
             title="Focus both views on a model branch" value={branchScope.value} onChange={event => branchScope.onChange(event.target.value)}>
             {branchScope.options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
           </select>}
+          <select className="snapshot-scope camera-projection" aria-label="Camera projection" title="Camera projection"
+            value={projection} onChange={event => setProjection(event.target.value as Projection)}>
+            <option value="orthographic">Orthographic</option>
+            <option value="perspective">Perspective</option>
+          </select>
           <button
             className={`icon-button ${flowing ? "active" : ""}`}
             onClick={() => setFlowing(!flowing)}

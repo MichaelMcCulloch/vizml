@@ -769,6 +769,9 @@ kbd {
   width: 25px;
   height: 25px;
 }
+.camera-projection {
+  margin-right: 5px;
+}
 .flow-speed {
   display: flex;
   align-items: center;
@@ -794,8 +797,12 @@ kbd {
 .flow-speed:focus-within {
   color: rgb(var(--tone-9-rgb));
 }
+@container architecture (max-width: 700px) {
+  .architecture-panel .flow-speed { display: none; }
+  .architecture-panel .live-badge { display: none; }
+}
 @container architecture (max-width: 580px) {
-  .architecture-panel:has(.architecture-scope) .flow-speed { display: none; }
+  .architecture-panel:has(.architecture-scope) .panel-title { display: none; }
   .architecture-caption { gap: 8px; }
   .architecture-caption .architecture-hint { display: none; }
   .live-badge {
@@ -803,6 +810,7 @@ kbd {
   }
 }
 @container architecture (max-width: 460px) {
+  .architecture-panel .panel-title > span { display: none; }
   .architecture-panel .architecture-scope { max-width: 105px; }
   .architecture-panel:has(.architecture-scope) .flow-speed > span { display: none; }
   .flow-speed > span {
