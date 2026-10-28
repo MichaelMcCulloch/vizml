@@ -1891,6 +1891,7 @@ export default function Architecture({
       startPoint: THREE.Vector3;
       plane: THREE.Plane;
       planeStart: THREE.Vector3;
+      originalOffset: [number, number, number] | undefined;
       moved: boolean;
       autoRotate: boolean;
     };
@@ -1940,6 +1941,7 @@ export default function Architecture({
         startPoint,
         plane,
         planeStart,
+        originalOffset: manual[id] ? [...manual[id]] : undefined,
         moved: false,
         autoRotate: controls.autoRotate,
       };
@@ -2006,7 +2008,7 @@ export default function Architecture({
 
     const finishDrag = (event: PointerEvent, cancelled = false) => {
       if (!drag) return false;
-      const { id, moved, autoRotate } = drag;
+      const { id, moved, autoRotate, originalOffset, startPoint } = drag;
       drag = null;
       controls.enabled = true;
       controls.autoRotate = autoRotate;
@@ -2017,7 +2019,12 @@ export default function Architecture({
       } catch {
         // The pointer may already have been released by the browser.
       }
-      if (moved) persistLayout();
+      if (moved && cancelled) {
+        if (originalOffset) manual[id] = originalOffset;
+        else delete manual[id];
+        layerGroups.get(id)?.position.copy(startPoint);
+        scheduleEdgeRebuild(id);
+      } else if (moved) persistLayout();
       if (!cancelled) select.current(id);
       return true;
     };
