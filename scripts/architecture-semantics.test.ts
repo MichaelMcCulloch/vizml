@@ -47,3 +47,18 @@ test("focused concatenations preserve hidden inputs and original segment order",
   expect(inputs.map(input => [input.edge.source, input.visible])).toEqual([["a", true], ["b", false], ["c", true], ["d", false], ["e", true]]);
   expect(concatSegments(inputs.length)[2]).toEqual([0.4, 0.6]);
 });
+
+test("schematic neuron bias uses matching declared tensor ownership", () => {
+  const n = makeNode("dense", 0, 0);
+  delete n.data.params.bias;
+  n.data.module_paths = ["encoder.condition"];
+  n.data.parameter_tensors = [{name:"encoder.condition.weight"}, {name:"encoder.condition.bias"}];
+  expect(hasLearnedBias(n, true)).toBe(true);
+  n.data.params.bias = 0;
+  expect(hasLearnedBias(n, true)).toBe(false);
+  delete n.data.params.bias;
+  n.data.parameter_tensors = [{name:"encoder.condition.weight"}, {name:"encoder.other.bias"}];
+  expect(hasLearnedBias(n, true)).toBe(false);
+  n.data.parameter_tensors = [{name:"encoder.condition.bias"}];
+  expect(hasLearnedBias(n, true)).toBe(false);
+});

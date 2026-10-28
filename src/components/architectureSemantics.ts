@@ -17,9 +17,18 @@ export function architectureGlyph(kind: Kind): ArchitectureGlyph {
 }
 
 export function hasLearnedBias(node: LayerNode, schematic = false): boolean {
-  // Older builder graphs omit bias because Linear historically defaulted to true.
-  // Schematics may carry an explicit boolean from the imported source.
-  return schematic && node.data.params.bias === undefined ? false : Number(node.data.params.bias ?? 1) !== 0;
+  // An explicit declaration wins, including an explicit false. Older builder
+  // graphs omitted bias because Linear defaulted to true.
+  const declared = node.data.params.bias;
+  if (declared !== undefined) return Number(declared) !== 0;
+  if (!schematic) return true;
+  // A schematic may instead declare its owned tensors. Only infer a bias for
+  // an explicitly named module, not an arbitrary bias in a composite block.
+  const paths = node.data.module_paths;
+  const tensors = node.data.parameter_tensors;
+  if (!Array.isArray(paths) || !Array.isArray(tensors)) return false;
+  const names = new Set(tensors.flatMap(tensor => tensor && typeof tensor === "object" && typeof tensor.name === "string" ? [tensor.name] : []));
+  return paths.some(path => typeof path === "string" && names.has(`${path}.weight`) && names.has(`${path}.bias`));
 }
 
 /** Assign equal, non-overlapping segments in the order of incoming edges. */
