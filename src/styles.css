@@ -796,6 +796,8 @@ kbd {
 }
 @container architecture (max-width: 580px) {
   .architecture-panel:has(.architecture-scope) .flow-speed { display: none; }
+  .architecture-caption { gap: 8px; }
+  .architecture-caption .architecture-hint { display: none; }
   .live-badge {
     display: none;
   }
@@ -868,6 +870,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 5px;
+  white-space: nowrap;
 }
 .legend-dot {
   height: 4px;
@@ -954,6 +957,8 @@ kbd {
   background: rgb(var(--tone-6-rgb));
 }
 .graph-panel {
+  container-type: inline-size;
+  container-name: graph;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -964,6 +969,26 @@ kbd {
 .graph-panel .panel-header {
   background: rgb(var(--tone-2-rgb));
   border-bottom: 1px solid rgb(var(--tone-4-rgb));
+}
+@container graph (max-width: 700px) {
+  .graph-panel .panel-header {
+    height: auto;
+    min-height: 43px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    padding-block: 8px;
+    row-gap: 6px;
+  }
+  .graph-panel .panel-tools {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+}
+@container graph (max-width: 450px) {
+  .graph-panel .panel-tools .tool-separator,
+  .graph-panel .add-block-button span,
+  .graph-panel .layout-button span,
+  .graph-panel .graph-instruction { display: none; }
 }
 .panel-subtitle {
   font-size: 9px;

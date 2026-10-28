@@ -819,7 +819,7 @@ export default function App() {
                     ) : (
                       <Plus size={14} />
                     )}
-                    Add block
+                    <span>Add block</span>
                   </button>
                   <button
                     className="icon-button"
@@ -842,6 +842,7 @@ export default function App() {
                   <span className="tool-separator" />
                   <button
                     className="quiet-button layout-button"
+                    aria-label="Auto layout"
                     onClick={() => {
                       commit(schematic && scope !== "all"
                         ? autoLayoutSubset(graph, new Set(viewGraph.nodes.map(node => node.id)))
@@ -851,7 +852,7 @@ export default function App() {
                     title={schematic && scope !== "all" ? "Arrange visible branch; hidden blocks stay in place" : "Arrange the entire graph"}
                   >
                     <LayoutGrid size={13} />
-                    Auto layout
+                    <span>Auto layout</span>
                   </button>
                   <button
                     className="icon-button"

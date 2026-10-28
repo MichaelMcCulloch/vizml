@@ -2211,9 +2211,9 @@ export default function Architecture({
           <i className="legend-dot" style={{ background: "#7acfd6" }} />
           Spatial
         </span>
-        <span>
+        <span title="Hidden layers show sampled neurons">
           <i className="legend-dot" style={{ background: "#baabec" }} />
-          Hidden · sampled neurons
+          Hidden
         </span>
         <span><i className="legend-dot" style={{ background: "#e3b74f" }} /> Input / output</span>
         <span><i className="legend-dot" style={{ background: "#268fff" }} /> Bias</span>
