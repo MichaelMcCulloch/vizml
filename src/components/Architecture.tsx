@@ -942,6 +942,12 @@ export default function Architecture({
       const offset = manual[id] ?? [0, 0, 0];
       return new THREE.Vector3(offset[0], offset[1], offset[2]);
     };
+    const relatedNodes = new Set<string>();
+    if (selected) for (const edge of graph.edges) {
+      if (edge.source === selected) relatedNodes.add(edge.target);
+      if (edge.target === selected) relatedNodes.add(edge.source);
+    }
+    const selectionOpacity = (id: string) => !selected || id === selected ? 1 : relatedNodes.has(id) ? 0.72 : 0.2;
     const layerGroups = new Map<string, THREE.Group>();
     const nodeLabels: { id: string; sprite: THREE.Sprite }[] = [];
     const recurrentLoops = new Map<string, THREE.Vector3[][]>();
@@ -960,7 +966,7 @@ export default function Architecture({
         ? "#e3b74f" : glyph === "dense" ? "#ad78df" : catalog[node.data.kind].color;
       const color = displayColor(nodeColor, theme);
       const focused = selected === id;
-      const opacity = selected && !focused ? 0.72 : 1;
+      const opacity = 1;
       const material = new THREE.MeshStandardMaterial({
         color,
         transparent: true,
@@ -1296,6 +1302,22 @@ export default function Architecture({
         badge.position.set(0, 2.5, 0);
         group.add(badge);
       }
+      const emphasis = selectionOpacity(id);
+      if (emphasis < 1) {
+        // Every glyph type has its own materials; fade them consistently,
+        // including labels and bias marks, while leaving neighbors visible.
+        const seen = new Set<THREE.Material>();
+        group.traverse(object => {
+          const material = (object as THREE.Mesh).material;
+          for (const item of material ? (Array.isArray(material) ? material : [material]) : []) {
+            if (seen.has(item)) continue;
+            seen.add(item);
+            item.transparent = true;
+            item.opacity *= emphasis;
+            item.depthWrite = false;
+          }
+        });
+      }
       scene.add(group);
     }
 
@@ -1335,7 +1357,7 @@ export default function Architecture({
       for (const points of loops) {
         const { progress, length } = pathProgress(points);
         const geometry = applyFlowAttributes(new THREE.BufferGeometry().setFromPoints(points), progress,
-          { profile: flowProfile(flow(id), id, length), color, opacity: (selected && selected !== id ? 0.65 : 1) * 0.14 });
+          { profile: flowProfile(flow(id), id, length), color, opacity: selectionOpacity(id) * 0.14 });
         layerGroups.get(id)!.add(new THREE.Line(geometry, flowMaterial));
       }
     }
@@ -1479,7 +1501,7 @@ export default function Architecture({
         key,
         pathProgress(makeConnectionCurve(aFace, bFace, residual ? 4.2 : isContext ? 3 : 0.18).getPoints(40)).length,
       );
-      const focus = selected && selected !== edge.source && selected !== edge.target ? 0.65 : 1;
+      const focus = selected && selected !== edge.source && selected !== edge.target ? 0.2 : 1;
       const appearance = (opacity: number, tint?: string): FlowAppearance => ({
         profile,
         color: tint ?? color,
@@ -1692,6 +1714,7 @@ export default function Architecture({
       const occupied: { left: number; right: number; top: number; bottom: number }[] = [];
       const ordered = [...nodeLabels].sort((a, b) => Number(b.id === selected) - Number(a.id === selected));
       for (const { id, sprite } of ordered) {
+        if (selected && id !== selected && !relatedNodes.has(id)) { sprite.visible = false; continue; }
         const point = new THREE.Vector3();
         sprite.getWorldPosition(point).project(camera);
         const x = (point.x + 1) * width / 2, y = (1 - point.y) * height / 2;
