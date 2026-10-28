@@ -953,6 +953,7 @@ export default function Architecture({
     const selectionOpacity = (id: string) => !selected || id === selected ? 1 : relatedNodes.has(id) ? 0.72 : 0.2;
     const layerGroups = new Map<string, THREE.Group>();
     const nodeLabels: { id: string; sprite: THREE.Sprite }[] = [];
+    const inputMarkers: THREE.Sprite[] = [];
     const recurrentLoops = new Map<string, THREE.Vector3[][]>();
 
     for (const id of validNodes) {
@@ -1009,6 +1010,7 @@ export default function Architecture({
               const number = labelSprite(String(index + 1), labelStrong, 0.8);
               number.position.set(-0.48, segment.position.y, 0.25);
               group.add(number);
+              inputMarkers.push(number);
             }
           });
           const hiddenInputs = incoming.filter(input => !input.visible).length;
@@ -1754,13 +1756,23 @@ export default function Architecture({
       camera.updateMatrixWorld();
       scene.updateMatrixWorld();
       const occupied: { left: number; right: number; top: number; bottom: number }[] = [];
+      const pixelScale = width * camera.zoom / (camera.right - camera.left);
+      // Segment numbers identify the selected join's inputs. Reserve their
+      // screen space before laying out neighboring node labels.
+      for (const marker of inputMarkers) {
+        const point = new THREE.Vector3();
+        marker.getWorldPosition(point).project(camera);
+        const x = (point.x + 1) * width / 2, y = (1 - point.y) * height / 2;
+        const halfWidth = Math.max(5, marker.scale.y * pixelScale * 0.25);
+        const halfHeight = Math.max(5, marker.scale.y * pixelScale * 0.3);
+        occupied.push({ left: x - halfWidth, right: x + halfWidth, top: y - halfHeight, bottom: y + halfHeight });
+      }
       const ordered = [...nodeLabels].sort((a, b) => Number(b.id === selected) - Number(a.id === selected));
       for (const { id, sprite } of ordered) {
         if (selected && id !== selected && !relatedNodes.has(id)) { sprite.visible = false; continue; }
         // A label's text occupies only part of its transparent sprite. Keep it
         // readable at overview scale, then let screen-space collision handling
         // choose which labels fit instead of displaying tiny text everywhere.
-        const pixelScale = width * camera.zoom / (camera.right - camera.left);
         const baseScale = sprite.userData.baseScale as THREE.Vector3;
         const scale = Math.max(1, 40 / (baseScale.y * pixelScale));
         sprite.scale.copy(baseScale).multiplyScalar(scale);
