@@ -256,6 +256,16 @@ export default function App() {
     setSelectedEdge(null);
   }, [flow, viewGraph.nodes]);
 
+  const navigateToNode = useCallback((id: string | null) => {
+    select(id);
+    if (!id) return;
+    const node = graphRef.current.nodes.find(item => item.id === id);
+    setFocusRequest(previous => ({ id, serial: (previous?.serial ?? 0) + 1 }));
+    if (node && graphRef.current.mode !== "schematic") {
+      flow.setCenter(node.position.x + 95, node.position.y + 55, { zoom: 0.85, duration: 400 });
+    }
+  }, [flow, select]);
+
   const changeScope = useCallback((value: string) => {
     const version = ++scopeFocusVersion.current;
     setScope(value);
@@ -798,12 +808,7 @@ export default function App() {
                   </span>
                 </div>
                 <div className="panel-tools">
-                  <FindLayer graph={graph} onFind={id => {
-                    const node = graphRef.current.nodes.find(item => item.id === id);
-                    select(id);
-                    setFocusRequest(previous => ({ id, serial: (previous?.serial ?? 0) + 1 }));
-                    if (node && !schematic) flow.setCenter(node.position.x + 95, node.position.y + 55, { zoom: 0.85, duration: 400 });
-                  }} />
+                  <FindLayer graph={graph} onFind={navigateToNode} />
                   {schematic && <select className="snapshot-scope" aria-label="Focus model branch" value={scope} onChange={e => changeScope(e.target.value)}>
                     {scopes.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                   </select>}
@@ -1001,7 +1006,7 @@ export default function App() {
           analysis={analysis}
           onUpdate={updateNode}
           onUpdateSchematic={updateSchematicNode}
-          onSelect={select}
+          onSelect={navigateToNode}
           onDelete={deleteNode}
           onDuplicate={duplicate}
           onInsertDense={insertDense}
