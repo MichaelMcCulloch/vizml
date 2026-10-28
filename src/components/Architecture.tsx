@@ -920,8 +920,8 @@ export default function Architecture({
       minY = Math.min(minY, point.y);
       maxY = Math.max(maxY, point.y);
     }
-    const frameMinX = Math.min(-4, minX - 4);
-    const frameMaxX = Math.max(maxX + 4, maxBoundX + 4);
+    const frameMinX = Math.min(-2.5, minX - 2.5);
+    const frameMaxX = Math.max(maxX + 2.5, maxBoundX + 2.5);
     const frameMinY = minY - 4.2;
     const frameMaxY = maxY + 4.8;
     const frameMinZ = Number.isFinite(minZ) ? minZ - 4 : -4;
