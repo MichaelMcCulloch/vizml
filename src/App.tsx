@@ -33,6 +33,10 @@ import {
   Moon,
   Monitor,
   Sun,
+  BarChart3,
+  SlidersHorizontal,
+  Box,
+  Columns2,
 } from "lucide-react";
 import Architecture from "./components/Architecture";
 import ResizablePanels from "./components/ResizablePanels";
@@ -69,6 +73,8 @@ import {
 import { download, fileName, useEngine } from "./useEngine";
 import { withNodeMeasurements } from "./graphView";
 import { useProjectBaseline } from "./useProjectBaseline";
+import ModelAnalysis from "./components/ModelAnalysis";
+import { traceNodes, type TraceMode } from "./graphTrace";
 
 const nodeTypes = { layer: LayerNode };
 const edgeTypes = { skip: SkipEdge };
@@ -124,9 +130,7 @@ export default function App() {
   const workspaceVersion = useRef(0);
   const graphRef = useRef(graph);
   graphRef.current = graph;
-  const [selected, setSelected] = useState<string | null>(
-    () => graph.nodes.find((n) => n.id === "conv2")?.id ?? null,
-  );
+  const [selected, setSelected] = useState<string | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState<{ id: string; serial: number } | null>(null);
   const [toast, setToast] = useState<{
@@ -137,6 +141,9 @@ export default function App() {
   const [exampleMenu, setExampleMenu] = useState(false);
   const [dialog, setDialog] = useState<"help" | "issues" | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [graphOnly, setGraphOnly] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<"inspect" | "analysis">("analysis");
+  const [traceMode, setTraceMode] = useState<TraceMode>("all");
   const [showLibrary, setShowLibrary] = useState(() => window.innerWidth > 900);
   const [saved, setSaved] = useState(true);
   const [projectId, setProjectId] = useState<string | null>(() => {
@@ -163,11 +170,13 @@ export default function App() {
   const [showSnapshotInfo, setShowSnapshotInfo] = useState(false);
   const [scope, setScope] = useState(() => localStorage.getItem("vizml.snapshot.focus") ?? "all");
   const scopes = useMemo(() => snapshotScopes(graph), [graph]);
+  const traced = useMemo(() => traceNodes(graph, selected, traceMode), [graph, selected, traceMode]);
   const viewGraph = useMemo(() => {
+    if (traced) return { ...graph, nodes: graph.nodes.filter(node => traced.has(node.id)), edges: graph.edges.filter(edge => traced.has(edge.source) && traced.has(edge.target)) };
     if (!schematic || scope === "all") return graph;
     const ids = new Set(scopes.find(s => s.id === scope)?.ids ?? graph.nodes.map(n => n.id));
     return { ...graph, nodes: graph.nodes.filter(n => ids.has(n.id)), edges: graph.edges.filter(e => ids.has(e.source) && ids.has(e.target)) };
-  }, [graph, schematic, scope, scopes]);
+  }, [graph, schematic, scope, scopes, traced]);
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const change = () => setSystemDark(media.matches);
@@ -245,6 +254,8 @@ export default function App() {
   }, [flow]);
   const select = useCallback((id: string | null) => {
     setShowSnapshotInfo(false);
+    if (id) setInspectorTab("inspect");
+    else setTraceMode("all");
     if (id && graphRef.current.mode === "schematic") {
       const node = graphRef.current.nodes.find(n => n.id === id);
       if (node) {
@@ -269,6 +280,7 @@ export default function App() {
   const changeScope = useCallback((value: string) => {
     const version = ++scopeFocusVersion.current;
     setScope(value);
+    setTraceMode("all");
     select(null);
     const ids = new Set(scopes.find(item => item.id === value)?.ids ?? []);
     const first = graph.nodes.filter(node => ids.has(node.id))
@@ -317,6 +329,7 @@ export default function App() {
       notice("A graph can contain up to 300 layers.", true);
       return;
     }
+    setTraceMode("all");
     const rect = graphPane.current?.getBoundingClientRect();
     const point =
       position ??
@@ -780,8 +793,25 @@ export default function App() {
       <div className={`workbench ${showLibrary ? "" : "library-hidden"}`}>
         {showLibrary && <Library onAdd={addNode} schematic={schematic} onClose={() => setShowLibrary(false)} />}
         <main className={`main-workspace ${expanded ? "model-expanded" : ""}`}>
+          <div className="workspace-toolbar">
+            <div className="view-switch" role="group" aria-label="Workspace view">
+              <button aria-label="Graph view" aria-pressed={graphOnly} onClick={() => { setGraphOnly(true); setExpanded(false); }}><GitBranch size={14} /><span>Graph</span></button>
+              <button aria-label="Split workspace view" aria-pressed={!expanded && !graphOnly} onClick={() => { setGraphOnly(false); setExpanded(false); }}><Columns2 size={14} /><span>Split</span></button>
+              <button aria-label="Architecture view" aria-pressed={expanded} onClick={() => { setGraphOnly(false); setExpanded(true); }}><Box size={14} /><span>3D</span></button>
+            </div>
+            <div className="trace-controls">
+              <FindLayer graph={graph} onFind={navigateToNode} />
+              <select aria-label="Trace selected layer" value={selected ? traceMode : "all"} disabled={!selected} title={selected ? `Trace ${activeNode?.data.label}` : "Select a layer to trace its connections"}
+                onChange={event => { setTraceMode(event.target.value as TraceMode); setScope("all"); setTimeout(fit, 80); }}>
+                <option value="all">All connections</option><option value="upstream">Inputs to selection</option><option value="downstream">Selection to outputs</option><option value="path">Path through selection</option>
+              </select>
+              <span className="view-node-count">{viewGraph.nodes.length}{viewGraph.nodes.length < graph.nodes.length ? ` / ${graph.nodes.length}` : ""} layers</span>
+            </div>
+          </div>
+          {traced && <div className="trace-banner"><GitBranch size={13} /><span>{traceMode === "upstream" ? "Inputs to" : traceMode === "downstream" ? "Outputs from" : "Path through"} <strong>{activeNode?.data.label}</strong></span><button onClick={() => { setTraceMode("all"); setTimeout(fit, 80); }} aria-label="Clear layer trace"><X size={13} /></button></div>}
           <ResizablePanels
             expanded={expanded}
+            graphOnly={graphOnly}
             architecture={
               <Architecture
                 graph={viewGraph}
@@ -789,11 +819,12 @@ export default function App() {
                 analysis={analysis}
                 theme={effectiveTheme}
                 selected={selected}
+                tracing={!!traced}
                 focusRequest={focusRequest}
                 onSelect={select}
                 onLayoutChange={offsets => commit({ ...graphRef.current, metadata: { ...graphRef.current.metadata, architecture_layout: offsets } })}
                 expanded={expanded}
-                onExpand={() => setExpanded(!expanded)}
+                onExpand={() => { setGraphOnly(false); setExpanded(!expanded); }}
                 branchScope={schematic ? { value: scope, options: scopes, onChange: changeScope } : undefined}
               />
             }
@@ -808,11 +839,10 @@ export default function App() {
                   </span>
                 </div>
                 <div className="panel-tools">
-                  <FindLayer graph={graph} onFind={navigateToNode} />
                   {schematic && <select className="snapshot-scope" aria-label="Focus model branch" value={scope} onChange={e => changeScope(e.target.value)}>
                     {scopes.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                   </select>}
-                  {schematic && <button className="icon-button" aria-label="Inspect supplied schematic" title="Source descriptions and snapshot claims" onClick={() => { select(null); setShowSnapshotInfo(!showSnapshotInfo); }}><FileSearch size={14} /></button>}
+                  {schematic && <button className="icon-button" aria-label="Inspect supplied schematic" title="Source descriptions and snapshot claims" onClick={() => { select(null); setInspectorTab("inspect"); setShowSnapshotInfo(!showSnapshotInfo); }}><FileSearch size={14} /></button>}
                   <button
                     className={`quiet-button add-block-button ${showLibrary ? "active" : ""}`}
                     onClick={() => setShowLibrary(!showLibrary)}
@@ -849,12 +879,12 @@ export default function App() {
                     className="quiet-button layout-button"
                     aria-label="Auto layout"
                     onClick={() => {
-                      commit(schematic && scope !== "all"
+                      commit(viewGraph.nodes.length < graph.nodes.length
                         ? autoLayoutSubset(graph, new Set(viewGraph.nodes.map(node => node.id)))
                         : autoLayout(graph, analysis));
                       setTimeout(fit, 30);
                     }}
-                    title={schematic && scope !== "all" ? "Arrange visible branch; hidden blocks stay in place" : "Arrange the entire graph"}
+                    title={viewGraph.nodes.length < graph.nodes.length ? "Arrange visible branch; hidden blocks stay in place" : "Arrange the entire graph"}
                   >
                     <LayoutGrid size={13} />
                     <span>Auto layout</span>
@@ -955,14 +985,14 @@ export default function App() {
                       variant={BackgroundVariant.Dots}
                       gap={20}
                       size={1}
-                      color="#354031"
+                      color={effectiveTheme === "light" ? "#c2cad6" : "#354250"}
                     />
                     <MiniMap
                       nodeColor={(node) =>
                         catalog[(node.data as LayerNodeType["data"]).kind].color
                       }
-                      maskColor="#101510c4"
-                      bgColor="#151b14"
+                      maskColor={effectiveTheme === "light" ? "#edf1f6c4" : "#0e1219c4"}
+                      bgColor={effectiveTheme === "light" ? "#f8fafc" : "#141a22"}
                       nodeStrokeWidth={0}
                       pannable
                       zoomable
@@ -999,7 +1029,12 @@ export default function App() {
             </section>
           </ResizablePanels>
         </main>
-        <Inspector
+        <aside className="inspector-dock">
+          <div className="inspector-tabs" role="group" aria-label="Inspector workspace">
+            <button aria-pressed={inspectorTab === "inspect"} onClick={() => setInspectorTab("inspect")}><SlidersHorizontal size={14} />Inspect</button>
+            <button aria-pressed={inspectorTab === "analysis"} onClick={() => setInspectorTab("analysis")}><BarChart3 size={14} />Analyze</button>
+          </div>
+          {inspectorTab === "analysis" ? <ModelAnalysis graph={graph} analysis={analysis} checking={engine.checking} selected={selected} verifiedNodes={engine.compilation?.checked_nodes} onSelect={id => { navigateToNode(id); setInspectorTab("analysis"); }} /> : <Inspector
           showSnapshotOverview={showSnapshotInfo}
           node={activeNode}
           graph={graph}
@@ -1015,7 +1050,8 @@ export default function App() {
           onProjectResidual={projectResidual}
           onExpandStage={expandStage}
           onSwapInputs={swapInputs}
-        />
+        />}
+        </aside>
       </div>
       <StatusBar
         graph={graph}
@@ -1113,7 +1149,7 @@ export default function App() {
                         key={i}
                         onClick={() => {
                           if (issue.node_id) {
-                            select(issue.node_id);
+                            navigateToNode(issue.node_id);
                             setDialog(null);
                           }
                         }}

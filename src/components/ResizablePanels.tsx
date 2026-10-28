@@ -14,10 +14,12 @@ export default function ResizablePanels({
   architecture,
   children,
   expanded,
+  graphOnly = false,
 }: {
   architecture: ReactNode;
   children: ReactNode;
   expanded: boolean;
+  graphOnly?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -47,7 +49,7 @@ export default function ResizablePanels({
     // editor has room for both.
     const updateOrientation = () => {
       const { width, height } = element.getBoundingClientRect();
-      if (width && height) setLandscape(width > height * 1.15);
+      if (width && height) setLandscape(width >= 1000 && width > height * 1.35);
     };
     const observer = new ResizeObserver(updateOrientation);
     observer.observe(element);
@@ -130,6 +132,7 @@ export default function ResizablePanels({
       <div
         className="architecture-slot"
         style={{
+          display: graphOnly ? "none" : undefined,
           flex: expanded
             ? "1 1 0%"
             : landscape
@@ -152,8 +155,8 @@ export default function ResizablePanels({
             ? `Model graph ${Math.round(split * 100)}%, architecture ${Math.round((1 - split) * 100)}%`
             : `Architecture ${Math.round(split * 100)}%, model graph ${Math.round((1 - split) * 100)}%`
         }
-        tabIndex={expanded ? -1 : 0}
-        style={{ display: expanded ? "none" : undefined }}
+        tabIndex={expanded || graphOnly ? -1 : 0}
+        style={{ display: expanded || graphOnly ? "none" : undefined }}
         title="Drag to resize · arrow keys to adjust · double-click to reset"
         onPointerDown={(event) => {
           if (event.button !== 0) return;
@@ -176,7 +179,7 @@ export default function ResizablePanels({
       <div
         className="graph-slot"
         style={{
-          flex: landscape ? `${split} 1 0%` : `${1 - split} 1 0%`,
+          flex: graphOnly ? "1 1 0%" : landscape ? `${split} 1 0%` : `${1 - split} 1 0%`,
           display: expanded ? "none" : undefined,
         }}
       >

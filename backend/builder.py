@@ -233,8 +233,28 @@ def compile_meta(graph: Graph) -> dict:
 
     namespace: dict = {"__name__": "vizml_generated"}
     exec(compile(export_python(graph), "<vizml model>", "exec"), namespace)
-    model = namespace["build_model"]("meta")
+    model = namespace["build_model"]("meta").eval()
     analysis = analyze(graph)
     inputs = {node.id: torch.empty(1, *analysis["nodes"][node.id]["shape"], device="meta", dtype=torch.long if node.data.kind == "token_input" else torch.float32) for node in graph.nodes if node.data.kind in INPUTS}
-    outputs = model(inputs)
-    return {"parameters": sum(param.numel() for param in model.parameters()), "outputs": {key: list(value.shape) for key, value in outputs.items()}, "device": "meta", "allocated_bytes": 0}
+    checked = {key: list(value.shape) for key, value in inputs.items()}
+
+    def verify_layer(key):
+        def hook(module, args, value):
+            actual = list(value.shape)
+            expected = [1, *analysis["nodes"][key]["shape"]]
+            if actual != expected:
+                raise ValueError(f"{model.specs[key]['label']}: PyTorch produced {actual}; shape inference expected {expected}.")
+            actual_params = sum(param.numel() for param in module.parameters())
+            if actual_params != analysis["nodes"][key]["parameters"]:
+                raise ValueError(f"{model.specs[key]['label']}: PyTorch parameter count differs from shape inference.")
+            checked[key] = actual
+        return hook
+
+    handles = [model.layers[model.keys[key]].register_forward_hook(verify_layer(key)) for key in analysis["order"] if key not in inputs]
+    try:
+        with torch.no_grad():
+            outputs = model(inputs)
+    finally:
+        for handle in handles:
+            handle.remove()
+    return {"parameters": sum(param.numel() for param in model.parameters()), "outputs": {key: list(value.shape) for key, value in outputs.items()}, "nodes": checked, "checked_nodes": len(checked), "device": "meta", "allocated_bytes": 0}

@@ -49,6 +49,8 @@ def infer_node(node: GraphNode, incoming: list[list[int]], infos: list[dict] | N
     if kind.startswith("deepseek_"):
         from .deepseek import infer_reference
         return infer_reference(node, incoming)
+    if kind not in INPUTS | OUTPUTS | {"conv2d", "dense", "maxpool2d", "padding", "flatten", "concat", "residual", "convnext_stage", "layernorm", "global_avgpool", "upsample2d"}:
+        raise ValueError(f"{kind} is a descriptive schematic operator; its forward operation is not implemented in the builder.")
     if any(info.get("dtype") == "int64" for info in infos):
         raise ValueError("Embed token IDs before using floating-point layers.")
     if any(info.get("layout") == "streams" for info in infos) and kind not in {"embedding", "residual"}:
@@ -137,6 +139,11 @@ def infer_node(node: GraphNode, incoming: list[list[int]], infos: list[dict] | N
 
 
 def analyze(graph: Graph) -> dict:
+    from .profiling import enrich_analysis
+    return enrich_analysis(graph, _analyze(graph))
+
+
+def _analyze(graph: Graph) -> dict:
     if graph.mode == "schematic":
         from .schematic import analyze_schematic
         return analyze_schematic(graph)
@@ -174,11 +181,13 @@ def analyze(graph: Graph) -> dict:
     if len(order) != len(nodes):
         errors.append({"node_id": next(key for key in nodes if degrees[key]), "message": "This graph contains a cycle. Model dependencies must form a directed acyclic graph."})
     results = {}
+    blocked_by: dict[str, list[str]] = {}
     depths: dict[str, int] = {}
     for key in order:
         depths[key] = max((depths.get(dep, 0) + 1 for dep in dependencies[key]), default=0)
         try:
             if any(dep not in results for dep in dependencies[key]):
+                blocked_by[key] = list(dict.fromkeys(root for dep in dependencies[key] if dep not in results for root in blocked_by.get(dep, [dep])))
                 raise ValueError("An upstream dependency has an invalid shape.")
             infos = [results[dep] for dep in dependencies[key]]
             results[key] = {**infer_node(nodes[key], [info["shape"] for info in infos], infos), "depth": depths[key]}
@@ -187,7 +196,7 @@ def analyze(graph: Graph) -> dict:
             if nodes[key].data.kind == "residual" and len(dependencies[key]) >= 2 and all(dep in results for dep in dependencies[key]):
                 branches = "; ".join(f"{nodes[dep].data.label}: {' × '.join(str(d) for d in results[dep]['shape'])}" for dep in dependencies[key])
                 message += f" Incoming branches — {branches}."
-            errors.append({"node_id": key, "message": message})
+            errors.append({"node_id": key, "message": message, **({"blocked_by": blocked_by[key]} if key in blocked_by else {})})
     outputs = [key for key, node in nodes.items() if node.data.kind in OUTPUTS]
     if not outputs:
         warnings.append({"node_id": None, "message": "Add a classification, regression, or embedding output to complete the model."})
@@ -212,6 +221,6 @@ def analyze(graph: Graph) -> dict:
     return {
         "valid": not errors, "executable": executable, "nodes": results, "order": order, "errors": errors,
         "warnings": warnings, "parameters": total_params,
-        "activation_bytes": sum(node["activation_elements"] * 4 for node in results.values()),
+        "activation_bytes": sum(node["activation_elements"] * (8 if node.get("dtype") == "int64" else 4) for node in results.values()),
         "depth": max(depths.values(), default=0) + (1 if nodes else 0), "outputs": outputs,
     }

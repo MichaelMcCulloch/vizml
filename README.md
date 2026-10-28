@@ -40,6 +40,16 @@ Then open [localhost:5173](http://localhost:5173). Port 8000 is the Python API; 
 
 Shortcuts: **⌘/Ctrl Z** undo, **⌘/Ctrl Shift Z** redo, **⌘/Ctrl S** save, **Delete/Backspace** remove selection, **F** fit graph, **/** search blocks, **?** guide, **Escape** close/clear selection.
 
+## Model analysis and tracing
+
+Use **Graph / Split / 3D** to give the active view the workspace. Layer search is available in every view. Select a layer, then choose **Inputs to selection**, **Selection to outputs**, or **Path through selection** to isolate its ancestry, descendants, or both in the graph and 3D view. Tracing changes the view, not the architecture. Clear the trace to restore the complete graph; auto layout inside a trace arranges only its visible nodes. The 3D camera fits projected glyph bounds, labels find free space around geometry, and hovering a glyph reveals its complete name, shape, and costs.
+
+The **Analyze** tab provides whole-model estimates and clickable rankings by parameters, compute, or output tensor storage. Batch size and FP32/FP16/BF16 controls explore cost scenarios without editing the model. Integer token tensors remain int64. Download the report to retain the assumptions, scaled totals, node names, and base analysis. Selecting a spatial layer also exposes its theoretical receptive field and effective stride when the engine can trace aligned grids back to a single image source. Resizing or unsupported/mixed spatial paths end that calculation rather than guessing.
+
+Compute is an allocation-free count of matrix/convolution multiply-accumulates (MACs) across dense layers, grouped/dilated convolutions, ConvNeXt stages, patch projections, transformer self/cross attention and feed-forward blocks, and stacked/bidirectional recurrent cells. One MAC is one multiply-accumulate. Dense attention products are counted even for causal attention. Biases, normalization, nonlinearities, pooling, interpolation and data movement are excluded; this is not a latency measurement. The output-storage figure sums visible node outputs, including inputs, and excludes internal intermediates, gradients, optimizer state, and runtime workspaces. It is not peak memory. Supplied schematics keep declared shapes and counts; their compute remains unknown, and symbolic sizes use illustrative source examples. Invalid or partly implemented graphs report partial coverage instead of a misleading complete total.
+
+**Verify in PyTorch** now compares every executed layer's shape and parameter count against inference on the meta device, identifying the layer when they disagree. Root shape errors are separated from downstream layers blocked by those errors. Schematic-only operators are rejected by the executable builder instead of silently becoming identity operations.
+
 ## Recurrent memory
 
 The **Recurrent** library and template group include **RNN, GRU, LSTM, ConvRNN, ConvGRU, and ConvLSTM**. All six are executable, editable architectures with untrained weights; portable presets live in `templates/`. ConvNeXt recurrence is deferred.

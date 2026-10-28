@@ -14,6 +14,8 @@ export function useEngine(
   const [compilation, setCompilation] = useState<{
     parameters: number;
     outputs: Record<string, number[]>;
+    nodes: Record<string, number[]>;
+    checked_nodes: number;
   } | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const currentGraph = useRef(graph);
@@ -93,7 +95,7 @@ export function useEngine(
           if (operation.fingerprint === fingerprintRef.current) {
             setCompilation(event.result);
             notice.current(
-              `PyTorch verified · ${event.result.parameters.toLocaleString()} parameters · no weight allocation`,
+              `PyTorch verified ${event.result.checked_nodes} layer shapes and parameter counts · no weight allocation`,
             );
           } else
             notice.current(

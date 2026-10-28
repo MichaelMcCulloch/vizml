@@ -19,6 +19,7 @@ import {
   isInput,
   isOutput,
   isRecurrent,
+  formatNumber,
   shapeText,
   type Analysis,
   type ModelGraph,
@@ -47,6 +48,7 @@ type Props = {
   analysis: Analysis | null;
   theme: "light" | "dark";
   selected: string | null;
+  tracing?: boolean;
   focusRequest?: { id: string; serial: number } | null;
   onSelect: (id: string) => void;
   onLayoutChange: (offsets: Record<string, Offset>) => void;
@@ -141,7 +143,7 @@ function labelPairSprite(
   const context = canvas.getContext("2d")!;
   context.textAlign = "center";
   context.textBaseline = "middle";
-  context.font = "500 32px ui-monospace, SFMono-Regular, Menlo, monospace";
+  context.font = "600 32px 'DM Sans', sans-serif";
   context.fillStyle = nameColor;
   context.fillText(name.slice(0, 40), 384, 46);
   const nameWidth = context.measureText(name.slice(0, 40)).width;
@@ -158,7 +160,7 @@ function labelPairSprite(
       transparent: true,
     }),
   );
-  sprite.scale.set(size * 9.6, size * 2.15, 1);
+  sprite.scale.set(size * 11, size * 2.15, 1);
   sprite.userData.isLabel = true;
   sprite.userData.textWidthFraction = Math.min(1, textWidth / canvas.width);
   return sprite;
@@ -170,6 +172,7 @@ export default function Architecture({
   analysis,
   theme,
   selected,
+  tracing = false,
   focusRequest,
   onSelect,
   onLayoutChange,
@@ -218,6 +221,7 @@ export default function Architecture({
     manualLayout: fullGraph.metadata?.architecture_layout,
     shapes: analysis?.nodes,
     selected,
+    tracing,
     focusRequest,
   });
 
@@ -264,6 +268,12 @@ export default function Architecture({
     readout.className = "snap-readout";
     readout.hidden = true;
     element.appendChild(readout);
+    const hoverCard = document.createElement("div");
+    hoverCard.className = "architecture-hover";
+    hoverCard.hidden = true;
+    const hoverTitle = document.createElement("strong"), hoverDetail = document.createElement("span"), hoverCost = document.createElement("small");
+    hoverCard.append(hoverTitle, hoverDetail, hoverCost);
+    element.appendChild(hoverCard);
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-15, 15, 7, -7, 0.1, 300);
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -950,7 +960,7 @@ export default function Architecture({
       if (edge.source === selected) relatedNodes.add(edge.target);
       if (edge.target === selected) relatedNodes.add(edge.source);
     }
-    const selectionOpacity = (id: string) => !selected || id === selected ? 1 : relatedNodes.has(id) ? 0.72 : 0.2;
+    const selectionOpacity = (id: string) => tracing || !selected || id === selected ? 1 : relatedNodes.has(id) ? 0.85 : 0.35;
     const layerGroups = new Map<string, THREE.Group>();
     const nodeLabels: { id: string; sprite: THREE.Sprite }[] = [];
     const inputMarkers: THREE.Sprite[] = [];
@@ -976,7 +986,7 @@ export default function Architecture({
       const material = new THREE.MeshStandardMaterial({
         color,
         transparent: true,
-        opacity: (theme === "light" ? 0.42 : 0.26) * opacity,
+        opacity: (theme === "light" ? 0.52 : 0.32) * opacity,
         roughness: 0.38,
         metalness: 0.16,
         emissive: color,
@@ -1351,6 +1361,27 @@ export default function Architecture({
       scene.add(group);
     }
 
+    // Cache only glyph geometry, excluding screen-sized labels. Translation
+    // stays live so fitting and label placement also follow manual drags.
+    scene.updateMatrixWorld(true);
+    const glyphBounds = new Map<string, THREE.Box3>();
+    for (const [id, group] of layerGroups) {
+      const bounds = new THREE.Box3();
+      group.traverse(object => {
+        if (!(object instanceof THREE.Sprite) && (object as THREE.Mesh).geometry)
+          bounds.union(new THREE.Box3().setFromObject(object));
+      });
+      if (!bounds.isEmpty()) glyphBounds.set(id, bounds.translate(group.position.clone().negate()));
+    }
+    const glyphCorners = (id: string) => {
+      const bounds = glyphBounds.get(id), position = layerGroups.get(id)?.position;
+      if (!bounds || !position) return [];
+      const corners: THREE.Vector3[] = [];
+      for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z])
+        corners.push(new THREE.Vector3(x, y, z).add(position));
+      return corners;
+    };
+
     const worldPoint = (id: string) => {
       const base = pointMap.get(id);
       return base ? base.clone().add(manualOffset(id)) : undefined;
@@ -1531,7 +1562,7 @@ export default function Architecture({
         key,
         pathProgress(makeConnectionCurve(aFace, bFace, residual ? 4.2 : isContext ? 3 : 0.18).getPoints(40)).length,
       );
-      const focus = selected && selected !== edge.source && selected !== edge.target ? 0.2 : 1;
+      const focus = !tracing && selected && selected !== edge.source && selected !== edge.target ? 0.16 : 1;
       const appearance = (opacity: number, tint?: string): FlowAppearance => ({
         profile,
         color: tint ?? color,
@@ -1721,6 +1752,7 @@ export default function Architecture({
     };
     drawEdges();
 
+    let refit = () => {};
     const reset = () => {
       camera.position.set(
         centerX + sceneExtent * 0.18,
@@ -1731,6 +1763,7 @@ export default function Architecture({
       camera.zoom = 1;
       camera.updateProjectionMatrix();
       controls.update();
+      refit();
     };
     reset();
     const shapeSignature = validNodes.join(",");
@@ -1741,7 +1774,11 @@ export default function Architecture({
       camera.updateProjectionMatrix();
       controls.update();
     }
+    let labelsDirty = true;
+    const labelCamera = new THREE.Matrix4(), labelProjection = new THREE.Matrix4();
+    let labelWidth = 0, labelHeight = 0;
     const setLabelVisibility = (visible: boolean) => {
+      labelsDirty = true;
       scene.traverse((object) => {
         if (object.userData.isLabel) object.visible = visible;
       });
@@ -1754,9 +1791,24 @@ export default function Architecture({
       const width = renderer.domElement.clientWidth, height = renderer.domElement.clientHeight;
       if (!width || !height) return;
       camera.updateMatrixWorld();
+      if (!labelsDirty && width === labelWidth && height === labelHeight && labelCamera.equals(camera.matrixWorld) && labelProjection.equals(camera.projectionMatrix)) return;
+      labelsDirty = false;
+      labelWidth = width; labelHeight = height;
+      labelCamera.copy(camera.matrixWorld); labelProjection.copy(camera.projectionMatrix);
       scene.updateMatrixWorld();
       const occupied: { left: number; right: number; top: number; bottom: number }[] = [];
       const pixelScale = width * camera.zoom / (camera.right - camera.left);
+      const cameraRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+      const cameraUp = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+      const glyphRects = new Map<string, { left: number; right: number; top: number; bottom: number }>();
+      for (const id of validNodes) {
+        const corners = glyphCorners(id).map(point => point.project(camera));
+        if (!corners.length) continue;
+        const xs = corners.map(point => (point.x + 1) * width / 2), ys = corners.map(point => (1 - point.y) * height / 2);
+        const box = { left: Math.min(...xs) - 3, right: Math.max(...xs) + 3, top: Math.min(...ys) - 3, bottom: Math.max(...ys) + 3 };
+        glyphRects.set(id, box);
+        occupied.push(box);
+      }
       // Segment numbers identify the selected join's inputs. Reserve their
       // screen space before laying out neighboring node labels.
       for (const marker of inputMarkers) {
@@ -1769,28 +1821,42 @@ export default function Architecture({
       }
       const ordered = [...nodeLabels].sort((a, b) => Number(b.id === selected) - Number(a.id === selected));
       for (const { id, sprite } of ordered) {
-        if (selected && id !== selected && !relatedNodes.has(id)) { sprite.visible = false; continue; }
+        if (!tracing && selected && id !== selected && !relatedNodes.has(id)) { sprite.visible = false; continue; }
         // A label's text occupies only part of its transparent sprite. Keep it
         // readable at overview scale, then let screen-space collision handling
         // choose which labels fit instead of displaying tiny text everywhere.
         const baseScale = sprite.userData.baseScale as THREE.Vector3;
-        const scale = Math.max(1, 40 / (baseScale.y * pixelScale));
+        const scale = Math.max(1, 52 / (baseScale.y * pixelScale));
         sprite.scale.copy(baseScale).multiplyScalar(scale);
-        // Grow downward from the original label position so that enlarged
-        // overview text does not cover the layer it describes.
-        sprite.position.y = -3 - (sprite.scale.y - baseScale.y) / 2;
+        sprite.position.set(0, -3, 0);
         sprite.updateMatrixWorld();
         const point = new THREE.Vector3();
         sprite.getWorldPosition(point).project(camera);
         const x = (point.x + 1) * width / 2, y = (1 - point.y) * height / 2;
         const w = sprite.scale.x * pixelScale * sprite.userData.textWidthFraction + 8;
         const h = sprite.scale.y * pixelScale * 0.72 + 4;
-        const box = { left: x - w / 2, right: x + w / 2, top: y - h / 2, bottom: y + h / 2 };
-        const visible = id === selected || (h >= 8 && point.z >= -1 && point.z <= 1 &&
-          box.right >= 0 && box.left <= width && box.bottom >= 0 && box.top <= height &&
-          !occupied.some(other => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top));
-        sprite.visible = visible;
-        if (visible) occupied.push(box);
+        const glyph = glyphRects.get(id);
+        const centerX = Math.max(w / 2 + 8, Math.min(width - w / 2 - 8, x));
+        const candidates = glyph ? [glyph.bottom + h / 2 + 7, glyph.top - h / 2 - 7, glyph.bottom + h * 1.5 + 11] : [y];
+        let placed = false;
+        if (point.z >= -1 && point.z <= 1 && x >= -w / 2 && x <= width + w / 2) for (const centerY of candidates) {
+          const box = { left: centerX - w / 2, right: centerX + w / 2, top: centerY - h / 2, bottom: centerY + h / 2 };
+          if (box.top < 4 || box.bottom > height - 28 || box.left < 0 || box.right > width) continue;
+          if (occupied.some(other => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)) continue;
+          sprite.position.addScaledVector(cameraRight, (centerX - x) / pixelScale).addScaledVector(cameraUp, (y - centerY) / pixelScale);
+          occupied.push(box);
+          placed = true;
+          break;
+        }
+        // A selected layer always keeps its label; other labels yield to the
+        // geometry and to higher-priority labels. Hover reveals omitted names.
+        if (!placed && id === selected) {
+          const centerY = Math.max(h / 2 + 4, Math.min(height - h / 2 - 28, candidates[0]));
+          sprite.position.addScaledVector(cameraRight, (centerX - x) / pixelScale).addScaledVector(cameraUp, (y - centerY) / pixelScale);
+          occupied.push({ left: centerX - w / 2, right: centerX + w / 2, top: centerY - h / 2, bottom: centerY + h / 2 });
+          placed = true;
+        }
+        sprite.visible = placed;
       }
     };
     setLabelVisibility(labelsValue.current);
@@ -1845,7 +1911,7 @@ export default function Architecture({
         renderer.render(scene, camera);
       },
     };
-    const resize = () => {
+    const resize = (recenter = false) => {
       const { width, height } = element.getBoundingClientRect();
       if (width <= 0 || height <= 0) return;
       renderer.setSize(width, height);
@@ -1859,17 +1925,30 @@ export default function Architecture({
         camera.matrixWorld,
         1,
       );
-      const projectedWidth =
-        Math.abs(right.x) * frameSizeX +
-        Math.abs(right.y) * frameSizeY +
-        Math.abs(right.z) * frameSizeZ;
-      const projectedHeight =
-        Math.abs(up.x) * frameSizeX +
-        Math.abs(up.y) * frameSizeY +
-        Math.abs(up.z) * frameSizeZ;
+      // Fit the actual glyphs in screen space. Projecting one large world box
+      // includes empty corners between distant branches and shrinks the model.
+      // Labels are excluded because their screen-sized sprites grow on zoom.
+      scene.updateMatrixWorld(true);
+      let left = Infinity, rightmost = -Infinity, bottom = Infinity, top = -Infinity;
+      for (const id of validNodes) {
+        for (const corner of glyphCorners(id)) {
+          const horizontal = corner.dot(right), vertical = corner.dot(up);
+          left = Math.min(left, horizontal); rightmost = Math.max(rightmost, horizontal);
+          bottom = Math.min(bottom, vertical); top = Math.max(top, vertical);
+        }
+      }
+      const projectedWidth = Number.isFinite(left) ? rightmost - left + 2 : 10;
+      const projectedHeight = Number.isFinite(bottom) ? top - bottom + 2 : 8;
+      if (recenter && Number.isFinite(left) && Number.isFinite(bottom)) {
+        const shift = right.clone().multiplyScalar((left + rightmost) / 2 - controls.target.dot(right))
+          .addScaledVector(up, (bottom + top) / 2 - controls.target.dot(up) - 0.6);
+        camera.position.add(shift);
+        controls.target.add(shift);
+        controls.update();
+      }
       const span = Math.max(
-        projectedWidth * 0.58,
-        projectedHeight * aspect * 0.58,
+        projectedWidth * width / Math.max(40, width - 48) / 2,
+        projectedHeight * width / Math.max(40, height - Math.min(70, height * 0.25)) / 2,
         5.2 * aspect,
       );
       camera.left = -span;
@@ -1879,9 +1958,10 @@ export default function Architecture({
       camera.updateProjectionMatrix();
       renderer.render(scene, camera);
     };
-    const observer = new ResizeObserver(resize);
+    refit = () => resize(true);
+    const observer = new ResizeObserver(() => resize());
     observer.observe(element);
-    resize();
+    resize(cameraView.current?.signature !== shapeSignature);
     if (focusRequest && focusRequest.id === selected && pointMap.has(focusRequest.id) && lastFocusRequest.current !== focusRequest.serial) {
       lastFocusRequest.current = focusRequest.serial;
       api.current?.focusSelected();
@@ -1917,6 +1997,7 @@ export default function Architecture({
     let edgeFrame = 0;
     let edgeDirty: string | null = null;
     const scheduleEdgeRebuild = (node: string) => {
+      labelsDirty = true;
       edgeDirty = node;
       if (edgeFrame) return;
       edgeFrame = requestAnimationFrame(() => {
@@ -1933,6 +2014,7 @@ export default function Architecture({
     };
 
     const pointerDown = (event: PointerEvent) => {
+      hoverCard.hidden = true;
       down = { x: event.clientX, y: event.clientY };
       if (event.button !== 0) return;
       const id = pickNode(event);
@@ -1977,7 +2059,22 @@ export default function Architecture({
     };
 
     const pointerMove = (event: PointerEvent) => {
-      if (!drag) return;
+      if (!drag) {
+        const id = event.buttons === 0 ? pickNode(event) : undefined;
+        const node = id ? byId.get(id) : undefined;
+        hoverCard.hidden = !node;
+        renderer.domElement.style.cursor = node ? "pointer" : "";
+        if (node) {
+          const info = analysis.nodes[node.id];
+          hoverTitle.textContent = node.data.label;
+          hoverDetail.textContent = `${catalog[node.data.kind].title} · ${shapeText(info.display_shape ?? info.shape)}`;
+          hoverCost.textContent = `${formatNumber(info.parameters)} parameters${info.macs != null ? ` · ${formatNumber(info.macs)} MACs` : " · declared"}`;
+          const rect = element.getBoundingClientRect();
+          hoverCard.style.left = `${Math.max(8, Math.min(rect.width - 268, event.clientX - rect.left + 16))}px`;
+          hoverCard.style.top = `${Math.max(8, Math.min(rect.height - 100, event.clientY - rect.top + 16))}px`;
+        }
+        return;
+      }
       const dx = event.clientX - drag.startX;
       const dy = event.clientY - drag.startY;
       if (!drag.moved && Math.hypot(dx, dy) < 2) return;
@@ -2078,6 +2175,8 @@ export default function Architecture({
       event.preventDefault();
     };
 
+    const hideHover = () => { hoverCard.hidden = true; };
+    element.addEventListener("pointerleave", hideHover);
     element.addEventListener("pointerdown", pointerDown, true);
     element.addEventListener("pointermove", pointerMove, true);
     element.addEventListener("pointerup", pointerUp, true);
@@ -2089,7 +2188,7 @@ export default function Architecture({
       frame = requestAnimationFrame(animate);
       const delta = previousTime === null ? 0 : Math.min((time - previousTime) / 1000, 0.1);
       previousTime = time;
-      if (document.hidden) return;
+      if (document.hidden || !element.clientWidth || !element.clientHeight) return;
       controls.update();
       declutterLabels();
       if (flowingValue.current) flowTime.current += delta * flowSpeedValue.current;
@@ -2108,6 +2207,8 @@ export default function Architecture({
       cancelAnimationFrame(edgeFrame);
       observer.disconnect();
       controls.dispose();
+      element.removeEventListener("pointerleave", hideHover);
+      hoverCard.remove();
       element.removeEventListener("pointerdown", pointerDown, true);
       element.removeEventListener("pointermove", pointerMove, true);
       element.removeEventListener("pointerup", pointerUp, true);

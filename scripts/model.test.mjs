@@ -315,7 +315,12 @@ test("expanded transformer decoder preserves query/context dependencies and para
       },
     ),
   );
-  assert.deepEqual(result[0], result[1]);
+  assert.equal(result[0].parameters, result[1].parameters);
+  assert.deepEqual(result[0].outputs, result[1].outputs);
+  assert.equal(result[0].allocated_bytes, 0);
+  assert.equal(result[1].allocated_bytes, 0);
+  assert.equal(result[0].checked_nodes, grouped.nodes.length);
+  assert.equal(result[1].checked_nodes, expanded.nodes.length);
 });
 
 test("DeepSeek grouped stages expand into consecutive native layer indices", () => {

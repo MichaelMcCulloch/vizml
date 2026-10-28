@@ -85,11 +85,14 @@ export type NodeAnalysis = {
   residual_blocks?: number;
   reference_only?: boolean;
   terminal?: boolean;
+  macs?: number | null;
+  output_bytes?: number;
+  receptive_field?: { source: string; size: number[]; stride: number[]; offset: number[] };
   kv_sources?: number[];
   index_sources?: number[];
   engram_layers?: number[];
 };
-export type Issue = { node_id: string | null; message: string };
+export type Issue = { node_id: string | null; message: string; blocked_by?: string[] };
 export type Analysis = {
   valid: boolean;
   executable?: boolean;
@@ -102,6 +105,15 @@ export type Analysis = {
   errors: Issue[];
   warnings: Issue[];
   outputs: string[];
+  profile?: {
+    macs: number | null;
+    known_macs: number;
+    unknown_nodes: string[];
+    float_output_elements: number;
+    integer_output_elements: number;
+    output_bytes: number;
+    complete: boolean;
+  };
 };
 
 type Definition = {

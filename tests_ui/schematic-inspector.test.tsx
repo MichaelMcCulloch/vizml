@@ -6,9 +6,61 @@ const React = await import("react");
 const { render, fireEvent, screen, cleanup } = await import("@testing-library/react");
 const { default: SchematicInspector } = await import("../src/components/SchematicInspector");
 const { parseGraph } = await import("../src/model");
+const { default: ModelAnalysis } = await import("../src/components/ModelAnalysis");
+import type { Analysis } from "../src/model";
 
 afterEach(cleanup);
 afterAll(() => GlobalRegistrator.unregister());
+
+function analysisFixture() {
+  const graph = parseGraph(JSON.stringify({ version: 1, name: "Token model", nodes: [
+    { id: "tokens", position: { x: 0, y: 0 }, data: { kind: "token_input", label: "Tokens", params: {} } },
+    { id: "embed", position: { x: 200, y: 0 }, data: { kind: "token_embedding", label: "Embedding", params: {} } },
+    { id: "head", position: { x: 400, y: 0 }, data: { kind: "token_head", label: "Predictions", params: {} } },
+  ], edges: [{id:"a",source:"tokens",target:"embed"},{id:"b",source:"embed",target:"head"}] }));
+  const info = { input_shape: [], elements: 0, parameters: 0, merge: "single", dependencies: 1, depth: 0 };
+  const analysis: Analysis = { valid: true, nodes: {
+    tokens: { ...info, shape:[1000], elements:1000, dtype:"int64", macs:0 },
+    embed: { ...info, shape:[1000,8], elements:8000, parameters:256, macs:0 },
+    head: { ...info, shape:[1000,4], elements:4000, parameters:36, macs:32000 },
+  }, order:["tokens","embed","head"], parameters:292, activation_bytes:56000, depth:3, errors:[], warnings:[], outputs:["head"],
+    profile:{macs:32000,known_macs:32000,unknown_nodes:[],float_output_elements:12000,integer_output_elements:1000,output_bytes:56000,complete:true} };
+  return { graph, analysis };
+}
+
+test("analysis what-if controls scale batch storage while preserving integer widths and the graph", () => {
+  const { graph, analysis } = analysisFixture();
+  const before = JSON.stringify(graph);
+  render(<ModelAnalysis graph={graph} analysis={analysis} checking={false} selected={null} onSelect={() => {}} />);
+  expect(screen.getByText("Output tensors").parentElement?.textContent).toContain("56.0 KB");
+  fireEvent.change(screen.getByLabelText("Analysis batch size"), {target:{value:"2"}});
+  fireEvent.change(screen.getByLabelText("Analysis storage precision"), {target:{value:"fp16"}});
+  expect(screen.getByText("Output tensors").parentElement?.textContent).toContain("64.0 KB");
+  expect(JSON.stringify(graph)).toBe(before);
+});
+
+test("analysis rankings change with the metric and navigate to the chosen layer", () => {
+  const { graph, analysis } = analysisFixture();
+  const selected: string[] = [];
+  const ui = render(<ModelAnalysis graph={graph} analysis={analysis} checking={false} selected={null} onSelect={id => selected.push(id)} />);
+  expect(ui.container.querySelector('.analysis-ranking button')?.getAttribute('aria-label')).toBe('Inspect Embedding');
+  fireEvent.click(screen.getByRole("button", {name:"Compute", exact:true}));
+  expect(ui.container.querySelector('.analysis-ranking button')?.getAttribute('aria-label')).toBe('Inspect Predictions');
+  fireEvent.click(screen.getByRole("button", {name:"Inspect Predictions"}));
+  expect(selected).toEqual(["head"]);
+});
+
+test("unknown compute is not shown as zero and cascading shape errors have one actionable root", () => {
+  const { graph, analysis } = analysisFixture();
+  analysis.valid = false;
+  analysis.profile!.macs = null;
+  analysis.profile!.unknown_nodes = ["embed", "head"];
+  analysis.errors = [{node_id:"embed",message:"Embedding needs integer IDs."},{node_id:"head",message:"Upstream shape invalid.",blocked_by:["embed"]}];
+  render(<ModelAnalysis graph={graph} analysis={analysis} checking={false} selected={null} onSelect={() => {}} />);
+  expect(screen.getByText("Compute / batch").parentElement?.textContent).toContain("—");
+  expect(screen.getByText("1 issue to resolve")).toBeTruthy();
+  expect(screen.getByText("1 downstream layer is waiting on these fixes.")).toBeTruthy();
+});
 
 test("layer search finds named layers and selects the requested result", async () => {
   const { default: FindLayer } = await import("../src/components/FindLayer");
