@@ -28,6 +28,14 @@ export function concatSegments(count: number): [number, number][] {
   return Array.from({ length: count }, (_, i) => [i / count, (i + 1) / count]);
 }
 
+/** Preserve the full input order when a focused view hides some branches. */
+export function concatInputs<T extends { source: string; target: string }>(
+  target: string, edges: T[], knownIds: Set<string>, visibleIds: Set<string>,
+): { edge: T; visible: boolean }[] {
+  return edges.filter(edge => edge.target === target && knownIds.has(edge.source))
+    .map(edge => ({ edge, visible: visibleIds.has(edge.source) }));
+}
+
 /** Dense runs are display groups only; no operators or dependencies are changed. */
 export function denseRunBoundaries(
   ids: string[], edges: { source: string; target: string }[], isDense: (id: string) => boolean,

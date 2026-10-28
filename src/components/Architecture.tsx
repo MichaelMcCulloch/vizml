@@ -24,7 +24,7 @@ import {
   type ModelGraph,
 } from "../model";
 import { sequenceGeometry } from "./sequenceGeometry";
-import { architectureGlyph, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "./architectureSemantics";
+import { architectureGlyph, concatInputs, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "./architectureSemantics";
 import { compactGridColumns, separateAlignedPaths } from "./architectureLayout";
 import { recurrentGeometry, recurrentMetrics, spatialScale, type SpatialFace } from "./recurrentGeometry";
 import {
@@ -43,6 +43,7 @@ import {
 
 type Props = {
   graph: ModelGraph;
+  fullGraph?: ModelGraph;
   analysis: Analysis | null;
   theme: "light" | "dark";
   selected: string | null;
@@ -172,6 +173,7 @@ function labelPairSprite(
 
 export default function Architecture({
   graph,
+  fullGraph = graph,
   analysis,
   theme,
   selected,
@@ -213,6 +215,8 @@ export default function Architecture({
     theme,
     nodes: graph.nodes.map((n) => ({ id: n.id, data: n.data })),
     edges: graph.edges.map((e) => ({ source: e.source, target: e.target })),
+    allNodes: fullGraph.nodes.map(n => ({ id: n.id, kind: n.data.kind })),
+    allEdges: fullGraph.edges.map(e => ({ id: e.id, source: e.source, target: e.target })),
     shapes: analysis?.nodes,
     selected,
   });
@@ -288,6 +292,9 @@ export default function Architecture({
     const outputInk = theme === "light" ? "#4055c7" : "#aebcff";
 
     const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+    const allById = new Map(fullGraph.nodes.map(n => [n.id, n]));
+    const knownIds = new Set(allById.keys()), visibleIds = new Set(byId.keys());
+    const inputsForConcat = (id: string) => concatInputs(id, fullGraph.edges, knownIds, visibleIds);
     const validNodes = analysis.order.filter(
       (id) => analysis.nodes[id] && byId.has(id),
     );
@@ -987,19 +994,26 @@ export default function Architecture({
           return mesh;
         };
         if (glyph === "concat") {
-          const incoming = graph.edges.filter(e => e.target === id && byId.has(e.source));
+          const incoming = inputsForConcat(id);
           const segments = concatSegments(incoming.length);
           if (!segments.length) addMesh(new THREE.BoxGeometry(0.18, 4, 0.22));
           segments.forEach(([start, end], index) => {
-            const source = byId.get(incoming[index].source)!;
+            const { edge, visible } = incoming[index];
+            const source = allById.get(edge.source)!;
             const segmentColor = displayColor(catalog[source.data.kind].color, theme);
-            const segmentMaterial = new THREE.MeshStandardMaterial({ color: segmentColor, emissive: segmentColor, emissiveIntensity: 0.12, roughness: 0.4 });
+            const segmentMaterial = new THREE.MeshStandardMaterial({ color: segmentColor, emissive: segmentColor, emissiveIntensity: 0.12, roughness: 0.4, transparent: !visible, opacity: visible ? 1 : 0.26 });
             const segment = new THREE.Mesh(new THREE.BoxGeometry(0.20, Math.max(0.01, 4 * (end - start) - 0.04), 0.28), segmentMaterial);
             segment.position.y = 2 - 2 * (start + end);
             segment.userData.nodeId = id;
             meshes.push(segment);
             group.add(segment);
           });
+          const hiddenInputs = incoming.filter(input => !input.visible).length;
+          if (focused && hiddenInputs) {
+            const badge = labelSprite(`${hiddenInputs} INPUT${hiddenInputs === 1 ? "" : "S"} OUTSIDE VIEW`, badgeInk, 0.36);
+            badge.position.y = 2.6;
+            group.add(badge);
+          }
           halfDepth.set(id, 0.1);
         } else if (glyph === "add") {
           addMesh(new THREE.TorusGeometry(0.5, 0.065, 8, 32));
@@ -1533,9 +1547,9 @@ export default function Architecture({
         let to = extent(bFace, bn, targetSpatialFace);
         if (sourceGlyph === "concat") from = bar(aFace, 0, 1);
         if (targetGlyph === "concat") {
-          const incoming = graph.edges.filter(e => e.target === edge.target && byId.has(e.source));
+          const incoming = inputsForConcat(edge.target);
           const segments = concatSegments(incoming.length);
-          const index = incoming.indexOf(edge);
+          const index = incoming.findIndex(item => item.edge.id === edge.id);
           const [start, end] = segments[index] ?? [0, 1];
           to = bar(bFace, start, end);
         }

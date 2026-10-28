@@ -740,6 +740,7 @@ export default function App() {
             architecture={
               <Architecture
                 graph={viewGraph}
+                fullGraph={graph}
                 analysis={analysis}
                 theme={effectiveTheme}
                 selected={selected}

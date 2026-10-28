@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { architectureGlyph, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "../src/components/architectureSemantics";
+import { architectureGlyph, concatInputs, concatSegments, denseRunBoundaries, hasLearnedBias, straightChains, sharesDenseInputColumn } from "../src/components/architectureSemantics";
 import { makeNode } from "../src/model";
 
 test("operation glyphs stay distinct regardless of tensor rank", () => {
@@ -38,4 +38,12 @@ test("dense input columns reflect the declared feature slice", () => {
   expect(sharesDenseInputColumn(true, [79], undefined)).toBe(true);
   expect(sharesDenseInputColumn(false, [79], 79)).toBe(false);
   expect(sharesDenseInputColumn(true, [12, 79], 79)).toBe(false);
+});
+
+
+test("focused concatenations preserve hidden inputs and original segment order", () => {
+  const edges = ["a", "b", "c", "d", "e"].map(source => ({source, target:"join"}));
+  const inputs = concatInputs("join", edges, new Set(["a", "b", "c", "d", "e"]), new Set(["a", "c", "e"]));
+  expect(inputs.map(input => [input.edge.source, input.visible])).toEqual([["a", true], ["b", false], ["c", true], ["d", false], ["e", true]]);
+  expect(concatSegments(inputs.length)[2]).toEqual([0.4, 0.6]);
 });
