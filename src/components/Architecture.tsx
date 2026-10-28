@@ -1469,7 +1469,7 @@ export default function Architecture({
         new THREE.Float32BufferAttribute(positions, 3),
       );
       geometry.setIndex(indices);
-      applyFlowAttributes(geometry, along, { ...appearance, surface: true }, across);
+      applyFlowAttributes(geometry, along, { ...appearance, surface: true, flushStart: exactStart, flushEnd: exactEnd }, across);
       group.add(new THREE.Mesh(geometry, flowMaterial));
     };
 

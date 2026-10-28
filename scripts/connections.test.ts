@@ -122,13 +122,15 @@ test("ribbon sides and line strands share the same flow without mutating geometr
   const before = geometry.attributes.position.array.slice();
   const progress = [0, 0.5, 1, 0, 0.5, 1];
   const profile = flowProfile(0.8, "bundle", 4);
-  applyFlowAttributes(geometry, progress, { profile, color: "#7acfd6", endColor: "#baabec", opacity: 0.06, surface: true }, [0, 0, 0, 1, 1, 1]);
+  applyFlowAttributes(geometry, progress, { profile, color: "#7acfd6", endColor: "#baabec", opacity: 0.06, surface: true, flushEnd: true }, [0, 0, 0, 1, 1, 1]);
   expect(geometry.attributes.position.array).toEqual(before);
   expect(geometry.attributes.aFlow.count).toBe(geometry.attributes.position.count);
   for (let i = 0; i < progress.length; i++) {
     expect(geometry.attributes.aFlow.getX(i)).toBeCloseTo(profile.phase);
     expect(geometry.attributes.aFlow.getY(i)).toBeCloseTo(profile.rate);
     expect(geometry.attributes.aProgress.getX(i)).toBe(progress[i]);
+    expect(geometry.attributes.aEnds.getX(i)).toBe(0);
+    expect(geometry.attributes.aEnds.getY(i)).toBe(1);
   }
   expect(geometry.attributes.aAcross.getX(0)).toBe(0);
   expect(geometry.attributes.aAcross.getX(3)).toBe(1);

@@ -42,6 +42,8 @@ export type FlowAppearance = {
   endColor?: THREE.ColorRepresentation;
   opacity: number;
   surface?: boolean;
+  flushStart?: boolean;
+  flushEnd?: boolean;
 };
 
 /** Attach the same flow coordinates to lines, line batches, ribbons, and tubes. */
@@ -55,6 +57,7 @@ export function applyFlowAttributes(
   const colors = new Float32Array(count * 3);
   const profiles = new Float32Array(count * 4);
   const opacities = new Float32Array(count * 2);
+  const ends = new Float32Array(count * 2);
   const from = new THREE.Color(appearance.color);
   const to = new THREE.Color(appearance.endColor ?? appearance.color);
   const tint = new THREE.Color();
@@ -63,6 +66,7 @@ export function applyFlowAttributes(
     tint.copy(from).lerp(to, progress[i]).toArray(colors, i * 3);
     profiles.set([phase, rate, width, strength], i * 4);
     opacities.set([appearance.opacity, appearance.surface ? 1 : 0], i * 2);
+    ends.set([appearance.flushStart ? 1 : 0, appearance.flushEnd ? 1 : 0], i * 2);
   }
   geometry.setAttribute("aProgress", new THREE.Float32BufferAttribute(progress, 1));
   geometry.setAttribute("aAcross", new THREE.Float32BufferAttribute(
@@ -71,6 +75,7 @@ export function applyFlowAttributes(
   geometry.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
   geometry.setAttribute("aFlow", new THREE.BufferAttribute(profiles, 4));
   geometry.setAttribute("aAppearance", new THREE.BufferAttribute(opacities, 2));
+  geometry.setAttribute("aEnds", new THREE.BufferAttribute(ends, 2));
   return geometry;
 }
 
@@ -86,17 +91,20 @@ export function createFlowMaterial(theme: "light" | "dark") {
       attribute vec3 aColor;
       attribute vec4 aFlow;
       attribute vec2 aAppearance;
+      attribute vec2 aEnds;
       varying float vProgress;
       varying float vAcross;
       varying vec3 vColor;
       varying vec4 vFlow;
       varying vec2 vAppearance;
+      varying vec2 vEnds;
       void main() {
         vProgress = aProgress;
         vAcross = aAcross;
         vColor = aColor;
         vFlow = aFlow;
         vAppearance = aAppearance;
+        vEnds = aEnds;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
@@ -108,6 +116,7 @@ export function createFlowMaterial(theme: "light" | "dark") {
       varying vec3 vColor;
       varying vec4 vFlow;
       varying vec2 vAppearance;
+      varying vec2 vEnds;
       void main() {
         float width = vFlow.z;
         float head = fract(uTime * vFlow.y + vFlow.x) * (1.0 + 2.0 * width) - width;
@@ -120,8 +129,8 @@ export function createFlowMaterial(theme: "light" | "dark") {
         float edge = mix(1.0,
           smoothstep(0.0, 0.18, vAcross) * smoothstep(0.0, 0.18, 1.0 - vAcross),
           vAppearance.y);
-        float tips = smoothstep(0.0, 0.035, vProgress)
-          * smoothstep(0.0, 0.035, 1.0 - vProgress);
+        float tips = mix(smoothstep(0.0, 0.035, vProgress), 1.0, vEnds.x)
+          * mix(smoothstep(0.0, 0.035, 1.0 - vProgress), 1.0, vEnds.y);
         float alpha = vAppearance.x * edge * tips
           * (1.0 + mix(0.7, 1.1, vAppearance.y) * sweep);
         vec3 color = mix(vColor, uHighlight, 0.1 * sweep);
