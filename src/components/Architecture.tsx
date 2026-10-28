@@ -1000,11 +1000,16 @@ export default function Architecture({
             const source = allById.get(edge.source)!;
             const segmentColor = displayColor(catalog[source.data.kind].color, theme);
             const segmentMaterial = new THREE.MeshStandardMaterial({ color: segmentColor, emissive: segmentColor, emissiveIntensity: 0.12, roughness: 0.4, transparent: !visible, opacity: visible ? 1 : 0.26 });
-            const segment = new THREE.Mesh(new THREE.BoxGeometry(0.20, Math.max(0.01, 4 * (end - start) - 0.04), 0.28), segmentMaterial);
+            const segment = new THREE.Mesh(new THREE.BoxGeometry(0.20, Math.max(0.01, 4 * (end - start) - 0.10), 0.28), segmentMaterial);
             segment.position.y = 2 - 2 * (start + end);
             segment.userData.nodeId = id;
             meshes.push(segment);
             group.add(segment);
+            if (focused) {
+              const number = labelSprite(String(index + 1), labelStrong, 0.8);
+              number.position.set(-0.48, segment.position.y, 0.25);
+              group.add(number);
+            }
           });
           const hiddenInputs = incoming.filter(input => !input.visible).length;
           if (focused && hiddenInputs) {

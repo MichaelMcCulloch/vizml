@@ -103,6 +103,7 @@ export default function SchematicInspector({ node, graph, analysis, onSelect, ov
   const weights = meta.weights as { filename: string; matched: number; expected: number; snapshot_match: boolean | null } | undefined;
   const checkpoint = meta.checkpoint as { generation?: number; cumulative_decisions?: number } | undefined;
   const links = node ? graph.edges.filter(e => e.target === node.id || e.source === node.id) : [];
+  const concatInputs = node?.data.kind === "concat" ? links.filter(edge => edge.target === node.id && graph.nodes.some(source => source.id === edge.source)) : [];
   return <aside className={`inspector snapshot-inspector ${node || overview ? "snapshot-selected" : ""}`}>
     <div className="inspector-eyebrow"><FileSearch size={13} /> {proposal ? "ARCHITECTURE PROPOSAL" : "SUPPLIED SCHEMATIC"}
       {(node || overview) && <button className="icon-button" aria-label="Close inspector" onClick={() => onSelect(null)}><X size={14} /></button>}
@@ -169,7 +170,8 @@ export default function SchematicInspector({ node, graph, analysis, onSelect, ov
         <div className="snapshot-section"><h4>Connections</h4>{links.map(edge => {
           const incoming = edge.target === node.id;
           const other = graph.nodes.find(n => n.id === (incoming ? edge.source : edge.target));
-          return <div className="schematic-connection" key={edge.id}><button className="snapshot-link" onClick={() => other && onSelect(other.id)}><span>{incoming ? "From" : "To"} · {other?.data.label}<small>{String(edge.label ?? edge.data?.role ?? "dependency")}</small></span><ArrowRight size={12} /></button><button className="icon-button" aria-label={`Remove connection ${other?.data.label ?? ""}`} onClick={() => onDisconnect(edge.id)}><X size={12} /></button></div>;
+          const inputIndex = concatInputs.indexOf(edge);
+          return <div className="schematic-connection" key={edge.id}><button className="snapshot-link" onClick={() => other && onSelect(other.id)}><span>{inputIndex >= 0 ? `${inputIndex + 1} · ` : ""}{incoming ? "From" : "To"} · {other?.data.label}<small>{String(edge.label ?? edge.data?.role ?? "dependency")}</small></span><ArrowRight size={12} /></button><button className="icon-button" aria-label={`Remove connection ${other?.data.label ?? ""}`} onClick={() => onDisconnect(edge.id)}><X size={12} /></button></div>;
         })}</div>
       </>}
       {!node && <>
