@@ -31,10 +31,10 @@ function ParameterField({ name, value, onChange, disabled = false, validate }: {
     {invalid && <small role="alert">{validate ? "Enter a nonnegative whole number." : "Enter a valid number."}</small>}</label>;
 }
 
-export default function SchematicInspector({ node, graph, analysis, onSelect, overview, onUpdate, onDelete, onDuplicate, onDisconnect }: {
+export default function SchematicInspector({ node, graph, analysis, onSelect, overview, onUpdate, onDelete, onDuplicate, onInsertDense, onDisconnect }: {
   node?: LayerNode; graph: ModelGraph; analysis: Analysis | null; onSelect: (id: string | null) => void; overview?: boolean;
   onUpdate: (id: string, patch: Partial<LayerNode["data"]>) => void;
-  onDelete: (id: string) => void; onDuplicate: (id: string) => void; onDisconnect: (id: string) => void;
+  onDelete: (id: string) => void; onDuplicate: (id: string) => void; onInsertDense?: (id: string) => void; onDisconnect: (id: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const [shape, setShape] = useState("");
@@ -152,6 +152,7 @@ export default function SchematicInspector({ node, graph, analysis, onSelect, ov
           {(analysis?.errors ?? []).filter(issue => issue.node_id === node.id).map((issue, index) => <p className="schematic-error" role="alert" key={index}>{issue.message}</p>)}
           {data.declaration_pending === true && <p className="context-note">Placeholder shape and count: review and save the declared shape.</p>}
           <p className="context-note">These are editable declarations. The original operation is not executed or verified.</p>
+          {data?.kind === "dense" && onInsertDense && <div className="snapshot-section"><button className="quiet-button" onClick={() => onInsertDense(node.id)}>Insert dense layer after</button><p>Existing outgoing connections pass through the new layer. Review its declarations.</p></div>}
           <div className="schematic-actions"><button className="quiet-button" onClick={() => onDuplicate(node.id)}>Duplicate</button><button className="quiet-button" onClick={() => onDelete(node.id)}>Delete block</button></div>
         </div>
         <div className="snapshot-section snapshot-metrics"><span>{proposal ? "Output shape" : "Declared output"}<strong>{shapeText(analysis?.nodes[node.id]?.display_shape ?? data.output_shape as (number | string)[])}</strong></span><span>Owned parameters<strong>{Number(data.parameter_count).toLocaleString()}</strong></span></div>

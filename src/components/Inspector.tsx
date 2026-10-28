@@ -34,6 +34,7 @@ type Props = {
   onSelect: (id: string | null) => void;
   onDelete: (id: string) => void;
   onDuplicate: (id: string) => void;
+  onInsertDense: (id: string) => void;
   onConnect: (source: string, target: string) => void;
   onDisconnect: (id: string) => void;
   onProjectResidual: (id: string) => void;
@@ -174,13 +175,14 @@ export default function Inspector({
   onSelect,
   onDelete,
   onDuplicate,
+  onInsertDense,
   onConnect,
   onDisconnect,
   onProjectResidual,
   onExpandStage,
   onSwapInputs,
 }: Props) {
-  if (graph.mode === "schematic") return <SchematicInspector node={node} graph={graph} analysis={analysis} onSelect={onSelect} overview={showSnapshotOverview} onUpdate={onUpdateSchematic} onDelete={onDelete} onDuplicate={onDuplicate} onDisconnect={onDisconnect} />;
+  if (graph.mode === "schematic") return <SchematicInspector node={node} graph={graph} analysis={analysis} onSelect={onSelect} overview={showSnapshotOverview} onUpdate={onUpdateSchematic} onDelete={onDelete} onDuplicate={onDuplicate} onInsertDense={onInsertDense} onDisconnect={onDisconnect} />;
   if (!node)
     return (
       <aside className="inspector">
@@ -333,6 +335,8 @@ export default function Inspector({
         )}
         {kind === "dense" && <div className="inspector-section">
           <label className="resize-corners"><input type="checkbox" checked={Number(params.bias ?? 1) !== 0} onChange={e => change("bias", e.target.checked ? 1 : 0)} /> Learned bias</label>
+          <div className="dense-insert"><button className="quiet-button" onClick={() => onInsertDense(node.id)}>Insert dense layer after</button>
+          <small>Existing outgoing connections pass through the new layer.</small></div>
         </div>}
         {kind === "upsample2d" && <div className="inspector-section">
           <label className="field-label" htmlFor="resize-mode">Interpolation</label>

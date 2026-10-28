@@ -55,6 +55,7 @@ import {
   editedSchematic,
   examples,
   makeNode,
+  insertDenseAfter,
   parseGraph,
   shapeText,
   type Kind,
@@ -360,6 +361,15 @@ export default function App() {
     },
     [commit],
   );
+  const insertDense = (id: string) => {
+    const result = insertDenseAfter(graphRef.current, id);
+    if (!result) { notice("Cannot insert a layer: the graph limit was reached.", true); return; }
+    if (graphRef.current.mode === "schematic") setScope("all");
+    commit(result.graph);
+    select(result.id);
+    if (expanded) setExpanded(false);
+    notice("Inserted a connected dense layer. Existing outgoing branches now pass through it.");
+  };
   const duplicate = (id: string) => {
     if (graph.nodes.length >= 300) {
       notice("A graph can contain up to 300 layers.", true);
@@ -956,6 +966,7 @@ export default function App() {
           onSelect={select}
           onDelete={deleteNode}
           onDuplicate={duplicate}
+          onInsertDense={insertDense}
           onConnect={connect}
           onDisconnect={disconnect}
           onProjectResidual={projectResidual}

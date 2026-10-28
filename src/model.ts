@@ -1176,6 +1176,47 @@ export function parseGraph(raw: string): ModelGraph {
   return cleanGraph(value);
 }
 
+/** Insert one fully connected layer, routing all existing outgoing branches through it. */
+export function insertDenseAfter(graph: ModelGraph, id: string): { graph: ModelGraph; id: string } | null {
+  const source = graph.nodes.find(node => node.id === id);
+  if (!source || source.data.kind !== "dense" || graph.nodes.length >= 300 || graph.edges.length >= 2000) return null;
+  const next = makeNode("dense", source.position.x + 230, source.position.y);
+  const downstream = new Set<string>();
+  const queue = graph.edges.filter(edge => edge.source === id).map(edge => edge.target);
+  for (let i = 0; i < queue.length; i++) {
+    const child = queue[i];
+    if (downstream.has(child) || child === id) continue;
+    downstream.add(child);
+    queue.push(...graph.edges.filter(edge => edge.source === child).map(edge => edge.target));
+  }
+  const nodes = graph.nodes.map(node => downstream.has(node.id) && node.position.x > source.position.x
+    ? { ...node, position: { ...node.position, x: node.position.x + 230 } } : node);
+  // Other branches can already occupy the new column. Keep those branches in
+  // place and choose the nearest free row instead of drawing cards on top of
+  // one another. The clearance includes the card and its connection handles.
+  const rowStep = 140;
+  const occupied = (y: number) => nodes.some(node =>
+    Math.abs(node.position.x - next.position.x) < 195 &&
+    Math.abs(node.position.y - y) < 120);
+  if (occupied(next.position.y)) {
+    for (let row = 1; row <= nodes.length + 1; row++) {
+      const candidates = [source.position.y + row * rowStep, source.position.y - row * rowStep];
+      const free = candidates.find(y => !occupied(y));
+      if (free !== undefined) { next.position.y = free; break; }
+    }
+  }
+  next.data = { ...next.data, label: "New dense layer", params: { ...next.data.params,
+    units: source.data.params.units ?? next.data.params.units,
+    bias: source.data.params.bias ?? next.data.params.bias } };
+  if (graph.mode === "schematic") next.data = { ...next.data,
+    output_shape: Array.isArray(source.data.output_shape) ? [...source.data.output_shape] : [1],
+    parameter_count: 0, declaration_pending: true,
+    description: "New schematic layer. Review its declared output shape and parameter count." };
+  const edges = graph.edges.map(edge => edge.source === id ? { ...edge, source: next.id } : edge);
+  edges.push({ id: crypto.randomUUID(), source: id, target: next.id });
+  return { graph: editedSchematic({ ...graph, nodes: [...nodes, next], edges }), id: next.id };
+}
+
 export function canConnect(
   graph: ModelGraph,
   source: string,

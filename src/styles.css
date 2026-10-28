@@ -2958,3 +2958,6 @@ kbd {
 .schematic-parameter small { color: rgb(var(--danger-rgb)); }
 .schematic-toggle { display: flex; align-items: center; gap: 7px; color: rgb(var(--tone-8-rgb)); font-size: 11px; margin-top: 10px; text-transform: capitalize; }
 .schematic-advanced { margin-top: 12px; }
+
+.dense-insert { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; margin-top: 12px; }
+.dense-insert small { color: rgb(var(--tone-7-rgb)); line-height: 1.45; }
