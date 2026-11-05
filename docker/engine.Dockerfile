@@ -11,5 +11,6 @@ WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH" VIZML_CHECKPOINT_DIR=/data/checkpoints VIZML_DATA_DIR=/data PYTHONUNBUFFERED=1
 COPY --from=build /app/.venv ./.venv
 COPY --from=build /app/backend ./backend
+COPY LICENSE ./LICENSE
 EXPOSE 8000
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

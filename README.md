@@ -221,3 +221,7 @@ Tests cover analytical shapes against real PyTorch execution, mixed-branch conca
 More attention variants, executable specialized MoE/sparse architectures, symbolic shape constraints, and `.safetensors` interchange. Current interchange supports graph JSON, generated Python source, and `.pt` architecture/checkpoint/state_dict files.
 
 Bun integration tests exercise development/production HTML serving, binary request/download forwarding, WebSocket greeting and event ordering, and engine failures.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

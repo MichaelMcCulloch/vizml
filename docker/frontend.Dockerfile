@@ -20,5 +20,6 @@ COPY --from=build /app/index.html ./index.html
 COPY --from=build /app/src ./src
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
+COPY LICENSE ./LICENSE
 EXPOSE 5173
 CMD ["bun", "scripts/server.ts", "--production"]
